@@ -1,3 +1,6 @@
+from abc import ABC
+from typing import Any
+
 import torch
 import torch.nn as nn
 from pykp.masked_softmax import MaskedSoftmax
@@ -473,13 +476,14 @@ class RNNDecoderTW(RNNDecoder):
                                            topic_attn_in=False, topic_copy=False, topic_dec=False, topic_num=50)
 
         self.bow_size = bow_size
-        self.tm_head = nn.Linear(bow_size, vocab_size, bias=False)
-        self.ada_topic_linear = nn.Linear(hidden_size, topic_num)
-        if copy_attn:
-            if topic_copy:
-                self.p_gen_topic_linear = nn.Linear(embed_size + hidden_size + memory_bank_size + topic_num, 1)
-            else:
-                self.p_gen_topic_linear = nn.Linear(embed_size + hidden_size + memory_bank_size, 1)
+        # self.tm_head = nn.Linear(bow_size, vocab_size, bias=False)
+        # self.ada_topic_linear = nn.Linear(hidden_size, topic_num)
+        # if copy_attn:
+        #     if topic_copy:
+        #         self.p_gen_topic_linear = nn.Linear(embed_size + hidden_size + memory_bank_size + topic_num, 1)
+        #     else:
+        #         self.p_gen_topic_linear = nn.Linear(embed_size + hidden_size + memory_bank_size, 1)
+        self.topic_memory = TopicMemeoryMechanism(topic_num=topic_num,bow_size=bow_size,embed_size=embed_size)
 
     def forward(self, y, topic_represent, h, memory_bank, src_mask, max_num_oovs, src_oov, coverage, topic_word):
         batch_size, max_src_seq_len = list(src_oov.size())
@@ -487,9 +491,12 @@ class RNNDecoderTW(RNNDecoder):
         if self.use_topic_represent:
             assert topic_represent.size() == torch.Size([batch_size, self.topic_num])
         assert h.size() == torch.Size([self.num_layers, batch_size, self.hidden_size])
+        # topic_represent
 
         # init input embedding
-        y_emb = self.embedding(y).unsqueeze(0)  # [1, batch_size, embed_size]
+        y_emb = self.embedding(y)
+        topic_represent = self.topic_memory(y_emb, topic_word, topic_represent)
+        y_emb = y_emb.unsqueeze(0)  # [1, batch_size, embed_size]
 
         if self.use_topic_represent and self.topic_dec:
             rnn_input = torch.cat([y_emb, topic_represent.unsqueeze(0)], dim=2)
@@ -525,21 +532,22 @@ class RNNDecoderTW(RNNDecoder):
             # [B, memory_bank_size + decoder_size]
 
         # 生成p_gen_topic
-        p_gen_topic = None
-        if self.copy_attn:
-            if self.topic_copy:
-                p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0), topic_represent),
-                                        dim=1)  # [B, memory_bank_size + decoder_size + embed_size]
-            else:
-                p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0)),
-                                        dim=1)  # [B, memory_bank_size + decoder_size + embed_size]
-            p_gen_topic = self.p_gen_topic_linear(p_gen_input)
-
-        vocab_logit = self.dropout(self.vocab_dist_linear_1(vocab_dist_input))
-        topic_vocab_logit = self.dropout(torch.matmul(self.ada_topic_linear(vocab_logit), self.tm_head(topic_word)))
-        vocab_dist = p_gen_topic * self.vocab_dist_linear_2(vocab_logit) + (1- p_gen_topic)*topic_vocab_logit
-        vocab_dist = self.softmax(vocab_dist)
-
+        # p_gen_topic = None
+        # if self.copy_attn:
+        #     if self.topic_copy:
+        #         p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0), topic_represent),
+        #                                 dim=1)  # [B, memory_bank_size + decoder_size + embed_size]
+        #     else:
+        #         p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0)),
+        #                                 dim=1)  # [B, memory_bank_size + decoder_size + embed_size]
+        #     p_gen_topic = self.p_gen_topic_linear(p_gen_input)
+        #
+        # vocab_logit = self.dropout(self.vocab_dist_linear_1(vocab_dist_input))
+        # topic_vocab_logit = self.dropout(torch.matmul(self.ada_topic_linear(vocab_logit), self.tm_head(topic_word)))
+        # vocab_dist = p_gen_topic * self.vocab_dist_linear_2(vocab_logit) + (1- p_gen_topic)*topic_vocab_logit
+        # vocab_dist = self.softmax(vocab_dist)
+        vocab_logit = self.vocab_dist_linear_1(vocab_dist_input)
+        vocab_dist = self.softmax(self.vocab_dist_linear_2(self.dropout(vocab_logit)))
         p_gen = None
         if self.copy_attn:
             if self.topic_copy:
@@ -565,3 +573,52 @@ class RNNDecoderTW(RNNDecoder):
             assert final_dist.size() == torch.Size([batch_size, self.vocab_size])
 
         return final_dist, h_next, context, attn_dist, p_gen, coverage
+
+class TopicMemeoryMechanism(nn.Module):
+    def __init__(self, topic_num, bow_size, embed_size):
+        super(TopicMemeoryMechanism, self).__init__()
+        self.topic_num = topic_num
+        self.bow_size = bow_size
+        self.embed_size = embed_size
+        self.source_linear = nn.Linear(bow_size, embed_size)
+        self.target_linear = nn.Linear(bow_size, embed_size)
+        self.embed_project = nn.Linear(embed_size, embed_size)
+        self.source_project = nn.Linear(embed_size, embed_size)
+        self.weight_p = nn.Linear(embed_size, 1)
+        self.sigmoid = nn.Sigmoid()
+        self.relu = nn.ReLU(inplace=True)
+
+
+    def forward(self, y_embed, topic_words, topic_represent, gamma = 0.8):
+        batch_size = y_embed.shape[0]
+
+        y_features = self.embed_project(y_embed)
+        y_features = y_features.unsqueeze(1).expand(batch_size, self.topic_num, self.embed_size).contiguous()
+        # [batch_size*topic_num, embed_size]
+        y_features = y_features.view(-1, self.embed_size)
+
+        # shape: [k, emb_size]
+        source_weight = self.relu(self.source_linear(topic_words))
+        source_features = self.source_project(source_weight)
+        source_features = source_features.unsqueeze(0).expand(batch_size, self.topic_num, self.embed_size).contiguous()
+        # [batch_size*topic_num, embed_size]
+        source_features = source_features.view(-1, self.embed_size)
+        # [batch_size*topic_num, 1]
+        p_k_weights = self.sigmoid(self.weight_p(source_features+y_features))
+        p_k_weights = p_k_weights.view(batch_size, self.topic_num)
+        p_batch = torch.add(gamma*p_k_weights, topic_represent)
+
+        target_weight = self.relu(self.target_linear(topic_words))
+        return torch.matmul(p_batch, target_weight)
+
+if __name__ == '__main__':
+    embed_size = 5
+    topic_num = 10
+    bow_size = 100
+    batch_size = 16
+    topic_memory = TopicMemeoryMechanism(embed_size=embed_size,topic_num=topic_num,bow_size=bow_size)
+    y_embed = torch.randn(batch_size, embed_size)
+    topic_words = torch.randn(topic_num, bow_size)
+    topic_represent = torch.randn(batch_size, topic_num)
+    out = topic_memory(y_embed, topic_words, topic_represent)
+    print(out)
