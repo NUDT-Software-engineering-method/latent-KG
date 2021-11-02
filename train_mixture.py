@@ -87,6 +87,18 @@ def fix_model(model):
         param.requires_grad = False
 
 
+def fix_model_seq2seq_decoder(model):
+    for name, param in model.named_parameters():
+        if 'decoder' in name:
+            param.requires_grad = False
+
+
+def unfix_model_seq2seq_decoder(model):
+    for name, param in model.named_parameters():
+        if 'decoder' in name:
+            param.requires_grad = True
+
+
 def unfix_model(model):
     for param in model.parameters():
         param.requires_grad = True
@@ -212,6 +224,8 @@ def train_model(model, ntm_model, optimizer_ml, optimizer_ntm, optimizer_whole, 
                             open(check_pt_ntm_model_path, 'wb')
                         )
                         logging.info('Saving ntm checkpoints to %s' % check_pt_ntm_model_path)
+                        ntm_model.print_topic_words(bow_dictionary,
+                                                    os.path.join(opt.model_path, 'topwords_e%d.txt' % epoch))
             else:
                 print("Valid loss does not drop")
                 sys.stdout.flush()

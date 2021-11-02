@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
 import pykp
-from pykp.modules import RNNEncoder, RNNDecoder
+from pykp.modules import RNNEncoder, RNNDecoder, RNNDecoderTW
 
 
 class Seq2SeqModel(nn.Module):
@@ -62,26 +62,46 @@ class Seq2SeqModel(nn.Module):
             pad_token=self.pad_idx_src,
             dropout=self.dropout
         )
-
-        self.decoder = RNNDecoder(
-            vocab_size=self.vocab_size,
-            embed_size=self.emb_dim,
-            hidden_size=self.decoder_size,
-            num_layers=self.dec_layers,
-            memory_bank_size=self.num_directions * self.encoder_size,
-            coverage_attn=self.coverage_attn,
-            copy_attn=self.copy_attn,
-            review_attn=self.review_attn,
-            pad_idx=self.pad_idx_trg,
-            attn_mode=self.attn_mode,
-            dropout=self.dropout,
-            use_topic_represent=self.use_topic_represent,  # yue
-            topic_attn=self.topic_attn,
-            topic_attn_in=self.topic_attn_in,
-            topic_copy=self.topic_copy,
-            topic_dec=self.topic_dec,
-            topic_num=self.topic_num
-        )
+        self.topic_words = opt.topic_words
+        if opt.topic_words:
+            self.decoder = RNNDecoderTW(vocab_size=self.vocab_size,
+                                        embed_size=self.emb_dim,
+                                        hidden_size=self.decoder_size,
+                                        num_layers=self.dec_layers,
+                                        memory_bank_size=self.num_directions * self.encoder_size,
+                                        coverage_attn=self.coverage_attn,
+                                        copy_attn=self.copy_attn,
+                                        review_attn=self.review_attn,
+                                        pad_idx=self.pad_idx_trg,
+                                        attn_mode=self.attn_mode,
+                                        dropout=self.dropout,
+                                        use_topic_represent=self.use_topic_represent,  # yue
+                                        topic_attn=self.topic_attn,
+                                        topic_attn_in=self.topic_attn_in,
+                                        topic_copy=self.topic_copy,
+                                        topic_dec=self.topic_dec,
+                                        topic_num=self.topic_num,
+                                        bow_size=opt.bow_vocab_size)
+        else:
+            self.decoder = RNNDecoder(
+                vocab_size=self.vocab_size,
+                embed_size=self.emb_dim,
+                hidden_size=self.decoder_size,
+                num_layers=self.dec_layers,
+                memory_bank_size=self.num_directions * self.encoder_size,
+                coverage_attn=self.coverage_attn,
+                copy_attn=self.copy_attn,
+                review_attn=self.review_attn,
+                pad_idx=self.pad_idx_trg,
+                attn_mode=self.attn_mode,
+                dropout=self.dropout,
+                use_topic_represent=self.use_topic_represent,  # yue
+                topic_attn=self.topic_attn,
+                topic_attn_in=self.topic_attn_in,
+                topic_copy=self.topic_copy,
+                topic_dec=self.topic_dec,
+                topic_num=self.topic_num
+            )
 
         if self.bridge == 'dense':
             self.bridge_layer = nn.Linear(self.encoder_size * self.num_directions, self.decoder_size)
@@ -252,3 +272,33 @@ class NTM(nn.Module):
             print('Topic {}: {}'.format(k, ' '.join(topic_words)))
             fw.write('{}\n'.format(' '.join(topic_words)))
         fw.close()
+
+    def get_topic_words(self):
+        return self.fcd1.weight.T
+
+
+class ContextNTM(NTM):
+    """
+        add encoder last hidden state as input
+    """
+
+    def __init__(self, opt, bert_size, hidden_dim=500, l1_strength=0.001):
+        super(ContextNTM, self).__init__(opt, hidden_dim, l1_strength)
+        self.fc11 = nn.Linear( bert_size+ self.input_dim, hidden_dim)
+        self.adapt_layer = nn.Linear(bert_size, self.input_dim)
+
+    def encode(self, x, latent_state):
+        x_ = x
+        x = torch.cat((x, latent_state), 1)
+        e1 = F.relu(self.fc11(x))
+        e1 = F.relu(self.fc12(e1))
+        e1 = e1.add(self.fcs(x_))
+        return self.fc21(e1), self.fc22(e1)
+
+    def forward(self, x, latent_state):
+        mu, logvar = self.encode(x.view(-1, self.input_dim), latent_state)
+        z = self.reparameterize(mu, logvar)
+        g = self.generate(z)
+        return z, g, self.decode(g), mu, logvar
+
+# class TENTM(NTM):

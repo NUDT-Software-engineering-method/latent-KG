@@ -3,3 +3,7 @@
 *.swo
 __pycache__
 .idea
+processed_data
+data
+my_sample_prediction
+stopwords

@@ -844,7 +844,7 @@ def main(opt):
 
 
 def report_stat_and_scores(num_filtered_predictions, num_unique_trgs, num_src, score_dict, topk_list, present_tag):
-    result_txt_str = "===================================%s====================================\n" % (present_tag)
+    result_txt_str = "\n===================================%s====================================\n" % (present_tag)
     result_txt_str += "#predictions after filtering: %d\t #predictions after filtering per src:%.3f\n" % \
                       (num_filtered_predictions, num_filtered_predictions / num_src)
     result_txt_str += "#unique targets: %d\t #unique targets per src:%.3f\n" % \

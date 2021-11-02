@@ -17,7 +17,8 @@ from utils.time_log import time_since
 from utils.data_loader import load_data_and_vocab
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 
 def process_opt(opt):
@@ -123,7 +124,9 @@ def process_opt(opt):
 
     if not os.path.exists(opt.model_path):
         os.makedirs(opt.model_path)
-
+    log_path = os.path.join(opt.model_path, 'log')
+    if not os.path.exists(log_path):
+        os.makedirs(log_path)
     logging.info('Model_PATH : ' + opt.model_path)
 
     # dump the setting (opt) to disk in order to reuse easily
@@ -159,6 +162,7 @@ def main(opt):
         logging.info('Time for loading the data: %.1f' % load_data_time)
 
         start_time = time.time()
+        # loading model
         model = Seq2SeqModel(opt).to(opt.device)
         ntm_model = NTM(opt).to(opt.device)
         optimizer_seq2seq, optimizer_ntm, optimizer_whole = init_optimizers(model, ntm_model, opt)

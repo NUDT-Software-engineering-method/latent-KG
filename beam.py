@@ -140,7 +140,7 @@ class Beam:
 
         # best_scores_idx indicate the idx in the flattened beam * vocab_size array, so need to convert
         # the idx back to which beam and word each score came from.
-        prev_k = best_scores_idx / vocab_size  # convert it to the beam indices that the top k scores came from, LongTensor, size: [beam_size]
+        prev_k = best_scores_idx // vocab_size  # convert it to the beam indices that the top k scores came from, LongTensor, size: [beam_size]
         self.prev_ks.append(prev_k)
         self.next_ys.append((best_scores_idx - prev_k * vocab_size))  # convert it to the vocab indices, LongTensor, size: [beam_size]
         self.attn.append(attn_dist.index_select(0, prev_k))  # select the attention dist from the corresponding beam, size: [beam_size, src_len]

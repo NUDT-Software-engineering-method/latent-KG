@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+import os
 
 
 def init_logging(log_file, stdout=False):
@@ -35,7 +36,7 @@ def my_own_opts(parser):
 
     parser.add_argument('-joint_train', default=False, action='store_true')
     parser.add_argument('-joint_train_strategy', default='p_1_joint',
-                        choices=['p_1_iterate', 'p_0_iterate', 'p_1_joint', 'p_0_joint'])
+                        choices=['p_1_iterate', 'p_0_iterate', 'p_3_iterate', 'p_1_joint', 'p_0_joint'])
     parser.add_argument('-iterate_train_ntm', default=False, action='store_true')
 
     parser.add_argument('-p_seq2seq_e', type=int, default=1,
@@ -52,6 +53,7 @@ def my_own_opts(parser):
     parser.add_argument('-topic_attn', default=False, action='store_true', help='add topic in context vector')
     parser.add_argument('-topic_copy', default=False, action='store_true', help='add topic in copy switch')
     parser.add_argument('-topic_attn_in', default=False, action='store_true', help='add topic in computing attn score')
+    parser.add_argument('-topic_words', default=False, action='store_true', help='add topic words in decoder')
 
     parser.add_argument('-load_pretrain_ntm', default=False, action='store_true')
     parser.add_argument('-only_train_ntm', default=False, action='store_true')
@@ -172,6 +174,9 @@ def model_opts(parser):
 
     # Cascading model options
     # parser.add_argument('-cascading_model', action="store_true", help='Train a copy model.')
+    # if true use context by ntm if false use
+    parser.add_argument('-use_contextNTM', default=False, action='store_true',
+                        help="Whether use contextNTM.")
 
 
 def vocab_opts(parser):
@@ -378,7 +383,7 @@ def train_opts(parser):
     #                    help="Run validation test at this interval (every run_valid_every batches)")
     parser.add_argument('-early_stop_rl', action="store_true", default=False,
                         help="A flag to use early stopping in rl training.")
-    parser.add_argument('-early_stop_tolerance', type=int, default=1,
+    parser.add_argument('-early_stop_tolerance', type=int, default=2,
                         help="Stop training if it doesn't improve any more for several rounds of validation")
 
     timemark = time.strftime('%Y%m%d-%H%M%S', time.localtime(time.time()))

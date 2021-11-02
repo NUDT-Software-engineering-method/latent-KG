@@ -9,7 +9,8 @@ class MaskedSoftmax(nn.Module):
 
     def forward(self, logit, mask=None):
         if mask is None:
-            dist = F.softmax(logit - torch.max(logit, dim=self.dim, keepdim=True)[0], dim=self.dim)
+            max_value = torch.max(logit, dim=self.dim, keepdim=True)[0]
+            dist = F.softmax(logit - max_value, dim=self.dim)
         else:
             dist_ = F.softmax(logit - torch.max(logit, dim=self.dim, keepdim=True)[0], dim=self.dim) * mask
             normalization_factor = dist_.sum(self.dim, keepdim=True)
