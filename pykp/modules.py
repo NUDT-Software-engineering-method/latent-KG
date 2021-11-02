@@ -429,6 +429,7 @@ class RNNDecoder(nn.Module):
         if self.coverage_attn:
             assert coverage.size() == torch.Size([batch_size, max_src_seq_len])
 
+        # 将topic分布加到最后的decoder的输出
         if self.topic_attn:
             vocab_dist_input = torch.cat((context, last_layer_h_next, topic_represent), dim=1)
             # [B, memory_bank_size + decoder_size + topic_num]
@@ -471,9 +472,9 @@ class RNNDecoderTW(RNNDecoder):
                  topic_attn_in=False, topic_copy=False, topic_dec=False, topic_num=50):
         super(RNNDecoderTW, self).__init__(vocab_size, embed_size, hidden_size, num_layers, memory_bank_size,
                                            coverage_attn, copy_attn,
-                                           review_attn, pad_idx, attn_mode, dropout=0.0, use_topic_represent=False,
-                                           topic_attn=False,
-                                           topic_attn_in=False, topic_copy=False, topic_dec=False, topic_num=50)
+                                           review_attn, pad_idx, attn_mode, dropout=dropout, use_topic_represent=use_topic_represent,
+                                           topic_attn=topic_attn,
+                                           topic_attn_in=topic_attn_in, topic_copy=topic_copy, topic_dec=topic_dec, topic_num=topic_num)
 
         self.bow_size = bow_size
         # self.tm_head = nn.Linear(bow_size, vocab_size, bias=False)
@@ -484,6 +485,9 @@ class RNNDecoderTW(RNNDecoder):
         #     else:
         #         self.p_gen_topic_linear = nn.Linear(embed_size + hidden_size + memory_bank_size, 1)
         self.topic_memory = TopicMemeoryMechanism(topic_num=topic_num,bow_size=bow_size,embed_size=embed_size)
+        self.input_size = embed_size + embed_size
+        self.rnn = nn.GRU(input_size=self.input_size, hidden_size=hidden_size, num_layers=num_layers,
+                          bidirectional=False, batch_first=False, dropout=dropout)
 
     def forward(self, y, topic_represent, h, memory_bank, src_mask, max_num_oovs, src_oov, coverage, topic_word):
         batch_size, max_src_seq_len = list(src_oov.size())
@@ -495,14 +499,13 @@ class RNNDecoderTW(RNNDecoder):
 
         # init input embedding
         y_emb = self.embedding(y)
+        topic_represent_temp = topic_represent
         topic_represent = self.topic_memory(y_emb, topic_word, topic_represent)
         y_emb = y_emb.unsqueeze(0)  # [1, batch_size, embed_size]
-
         if self.use_topic_represent and self.topic_dec:
             rnn_input = torch.cat([y_emb, topic_represent.unsqueeze(0)], dim=2)
         else:
             rnn_input = y_emb
-
         _, h_next = self.rnn(rnn_input, h)
 
         assert h_next.size() == torch.Size([self.num_layers, batch_size, self.hidden_size])
@@ -511,7 +514,7 @@ class RNNDecoderTW(RNNDecoder):
 
         # apply attention, get input-aware context vector, attention distribution and update the coverage vector
         if self.topic_attn_in:
-            context, attn_dist, coverage = self.attention_layer(last_layer_h_next, memory_bank, topic_represent,
+            context, attn_dist, coverage = self.attention_layer(last_layer_h_next, memory_bank, topic_represent_temp,
                                                                 src_mask, coverage)
         else:
             context, attn_dist, coverage = self.attention_layer(last_layer_h_next, memory_bank, src_mask, coverage)
@@ -525,7 +528,7 @@ class RNNDecoderTW(RNNDecoder):
             assert coverage.size() == torch.Size([batch_size, max_src_seq_len])
 
         if self.topic_attn:
-            vocab_dist_input = torch.cat((context, last_layer_h_next, topic_represent), dim=1)
+            vocab_dist_input = torch.cat((context, last_layer_h_next, topic_represent_temp), dim=1)
             # [B, memory_bank_size + decoder_size + topic_num]
         else:
             vocab_dist_input = torch.cat((context, last_layer_h_next), dim=1)
@@ -546,12 +549,13 @@ class RNNDecoderTW(RNNDecoder):
         # topic_vocab_logit = self.dropout(torch.matmul(self.ada_topic_linear(vocab_logit), self.tm_head(topic_word)))
         # vocab_dist = p_gen_topic * self.vocab_dist_linear_2(vocab_logit) + (1- p_gen_topic)*topic_vocab_logit
         # vocab_dist = self.softmax(vocab_dist)
+
         vocab_logit = self.vocab_dist_linear_1(vocab_dist_input)
         vocab_dist = self.softmax(self.vocab_dist_linear_2(self.dropout(vocab_logit)))
         p_gen = None
         if self.copy_attn:
             if self.topic_copy:
-                p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0), topic_represent),
+                p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0), topic_represent_temp),
                                         dim=1)  # [B, memory_bank_size + decoder_size + embed_size]
             else:
                 p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0)),
@@ -573,6 +577,7 @@ class RNNDecoderTW(RNNDecoder):
             assert final_dist.size() == torch.Size([batch_size, self.vocab_size])
 
         return final_dist, h_next, context, attn_dist, p_gen, coverage
+
 
 class TopicMemeoryMechanism(nn.Module):
     def __init__(self, topic_num, bow_size, embed_size):
@@ -606,6 +611,7 @@ class TopicMemeoryMechanism(nn.Module):
         # [batch_size*topic_num, 1]
         p_k_weights = self.sigmoid(self.weight_p(source_features+y_features))
         p_k_weights = p_k_weights.view(batch_size, self.topic_num)
+
         p_batch = torch.add(gamma*p_k_weights, topic_represent)
 
         target_weight = self.relu(self.target_linear(topic_words))

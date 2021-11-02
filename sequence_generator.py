@@ -105,9 +105,12 @@ class SequenceGenerator(object):
             src_bow_norm = F.normalize(src_bow)
             self.ntm_model.eval()
             if self.topic_type == 'z':
+                # TODO: 自己的模型需要修改
                 topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                #topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm)
             else:
                 _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                # _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm)
 
             topic_represent = topic_represent.repeat(self.beam_size, 1)  # [batch * beam_size, topic_num]
         else:

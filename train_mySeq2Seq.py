@@ -280,7 +280,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 topicSeq2Seq_model.train()
                 # topicSeq2Seq_model.topic_model.train()
                 logging.info("\nTraining seq2seq+ntm epoch: {}/{}".format(epoch, opt.epochs))
-                if opt.iterate_train_ntm and last_train_joint_epoch > 20:
+                if opt.iterate_train_ntm and last_train_joint_epoch > 50:
                     begin_iterate_train_ntm = True
                     last_train_joint_epoch = 0
                     opt.add_two_loss = True
