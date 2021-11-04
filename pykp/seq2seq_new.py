@@ -92,9 +92,12 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                     h_t = h_t_next
                     y_t = y_t_next
                 if self.topic_words:
+                    # decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
+                    #     self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage,
+                    #                  self.topic_model.get_topic_words())
                     decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
                         self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage,
-                                     self.topic_model.get_topic_words())
+                                     self.topic_model.get_topic_embedding())
                 else:
                     decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
                         self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage)

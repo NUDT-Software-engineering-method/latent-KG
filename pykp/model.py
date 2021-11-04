@@ -313,13 +313,16 @@ class ContextNTM(NTM):
         return z, g, self.decode(g), mu, logvar
 
 class TopicEmbeddingNTM(ContextNTM):
+    """
+    Add topic word embedding in ntm
+    """
     def __init__(self, opt, bert_size, hidden_dim=500, l1_strength=0.001):
         super(TopicEmbeddingNTM, self).__init__(opt, bert_size, hidden_dim=hidden_dim, l1_strength=l1_strength)
-        self.topic_embedding = torch.Tensor(self.topic_num, opt.word_vec_size)
+        self.topic_embedding = torch.Tensor(self.topic_num, opt.encoder_size*2)
         self.topic_embedding = nn.Parameter(self.topic_embedding)
         nn.init.xavier_uniform_(self.topic_embedding)
 
-        self.word_embedding = torch.Tensor(self.input_dim, opt.word_vec_size)
+        self.word_embedding = torch.Tensor(self.input_dim, opt.encoder_size*2)
         self.word_embedding = nn.Parameter(self.word_embedding)
         nn.init.xavier_uniform_(self.word_embedding)
 
@@ -333,9 +336,10 @@ class TopicEmbeddingNTM(ContextNTM):
         return g1
 
     def decode(self, z):
+        # 这里加上softmax dropout对结果影响不大
         z = F.softmax(z, dim=1)
         word_embedding_d = self.dropout(self.word_embedding)
-        topic_words = torch.matmul(self.topic_embedding, word_embedding_d)
+        topic_words = torch.matmul(self.topic_embedding, word_embedding_d.T)
         out = torch.matmul(z, topic_words)
         out = F.softmax(out, dim=1)
         return out
@@ -349,10 +353,21 @@ class TopicEmbeddingNTM(ContextNTM):
 
     def get_topic_words(self):
         word_embedding_d = self.dropout(self.word_embedding)
-        topic_words = torch.matmul(self.topic_embedding, word_embedding_d)
+        topic_words = torch.matmul(self.topic_embedding, word_embedding_d.T)
         return topic_words
 
+    def print_topic_words(self, vocab_dic, fn, n_top_words=10):
+        beta_exp = self.get_topic_words().data.cpu().numpy()
+        logging.info("Writing to %s" % fn)
+        fw = open(fn, 'w')
+        for k, beta_k in enumerate(beta_exp):
+            topic_words = [vocab_dic[w_id] for w_id in np.argsort(beta_k)[:-n_top_words - 1:-1]]
+            print('Topic {}: {}'.format(k, ' '.join(topic_words)))
+            fw.write('{}\n'.format(' '.join(topic_words)))
+        fw.close()
 
+    def get_topic_embedding(self):
+        return self.topic_embedding
 
 
 

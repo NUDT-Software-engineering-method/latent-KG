@@ -515,15 +515,22 @@ class RNNDecoderTW(RNNDecoder):
         self.bow_size = bow_size
         # self.tm_head = nn.Linear(bow_size, vocab_size, bias=False)
         # self.ada_topic_linear = nn.Linear(hidden_size, topic_num)
+        if topic_attn:
+            self.vocab_dist_linear_topic_1 = nn.Linear(hidden_size + memory_bank_size + topic_num, hidden_size)
+        else:
+            self.vocab_dist_linear_topic_1 = nn.Linear(hidden_size + memory_bank_size, hidden_size)
+
+        self.vocab_dist_linear_topic_2 = nn.Linear(hidden_size, vocab_size)
         # if copy_attn:
         #     if topic_copy:
         #         self.p_gen_topic_linear = nn.Linear(embed_size + hidden_size + memory_bank_size + topic_num, 1)
         #     else:
         #         self.p_gen_topic_linear = nn.Linear(embed_size + hidden_size + memory_bank_size, 1)
-        self.topic_memory = TopicMemeoryMechanism(topic_num=topic_num,bow_size=bow_size,embed_size=embed_size)
 
+        # self.topic_memory = TopicMemeoryMechanism(topic_num=topic_num,bow_size=bow_size,embed_size=embed_size)
+        self.topic_embedding_attention = ContextTopicAttention(encoder_hidden_size=hidden_size, topic_num=topic_num, topic_emb_dim=hidden_size)
 
-    def forward(self, y, topic_represent, h, memory_bank, src_mask, max_num_oovs, src_oov, coverage, topic_word):
+    def forward(self, y, topic_represent, h, memory_bank, src_mask, max_num_oovs, src_oov, coverage, topic_embedding):
         batch_size, max_src_seq_len = list(src_oov.size())
         assert y.size() == torch.Size([batch_size])
         if self.use_topic_represent:
@@ -533,10 +540,10 @@ class RNNDecoderTW(RNNDecoder):
 
         # init input embedding
         y_emb = self.embedding(y)
-        topic_represent_embedding = self.topic_memory(y_emb, topic_word, topic_represent)
+        # topic_represent_embedding = self.topic_memory(y_emb, topic_word, topic_represent)
         y_emb = y_emb.unsqueeze(0)  # [1, batch_size, embed_size]
         if self.use_topic_represent and self.topic_dec:
-            rnn_input = torch.cat([y_emb, topic_represent_embedding.unsqueeze(0)], dim=2)
+            rnn_input = torch.cat([y_emb, topic_represent.unsqueeze(0)], dim=2)
         else:
             rnn_input = y_emb
         _, h_next = self.rnn(rnn_input, h)
@@ -551,10 +558,17 @@ class RNNDecoderTW(RNNDecoder):
                                                                 src_mask, coverage)
         else:
             context, attn_dist, coverage = self.attention_layer(last_layer_h_next, memory_bank, src_mask, coverage)
+
+
+        # 计算topic_embedding之间的attention context
+        topic_context_mean,topic_context_top, seq_topic_weight = self.topic_embedding_attention(memory_bank, attn_dist, topic_embedding, topic_represent)
+
         # context: [batch_size, memory_bank_size]
         # attn_dist: [batch_size, max_input_seq_len]
         # coverage: [batch_size, max_input_seq_len]
         assert context.size() == torch.Size([batch_size, self.memory_bank_size])
+        assert topic_context_mean.size() == torch.Size([batch_size, self.memory_bank_size])
+        assert topic_context_top.size() == torch.Size([batch_size, self.memory_bank_size])
         assert attn_dist.size() == torch.Size([batch_size, max_src_seq_len])
 
         if self.coverage_attn:
@@ -562,9 +576,11 @@ class RNNDecoderTW(RNNDecoder):
 
         if self.topic_attn:
             vocab_dist_input = torch.cat((context, last_layer_h_next, topic_represent), dim=1)
+            vocab_dist_input_topic = torch.cat((topic_context_mean, last_layer_h_next, topic_represent), dim=1)
             # [B, memory_bank_size + decoder_size + topic_num]
         else:
             vocab_dist_input = torch.cat((context, last_layer_h_next), dim=1)
+            vocab_dist_input_topic = torch.cat((context, last_layer_h_next), dim=1)
             # [B, memory_bank_size + decoder_size]
 
         # 生成p_gen_topic
@@ -584,7 +600,12 @@ class RNNDecoderTW(RNNDecoder):
         # vocab_dist = self.softmax(vocab_dist)
 
         vocab_logit = self.vocab_dist_linear_1(vocab_dist_input)
-        vocab_dist = self.softmax(self.vocab_dist_linear_2(self.dropout(vocab_logit)))
+        vocab_topic_logit = self.vocab_dist_linear_topic_1(vocab_dist_input_topic)
+
+        vocab_dist = self.softmax(self.vocab_dist_linear_2(self.dropout(vocab_logit))/2
+                                + self.vocab_dist_linear_topic_2(self.dropout(vocab_topic_logit))/2)
+
+
         p_gen = None
         if self.copy_attn:
             if self.topic_copy:
@@ -651,14 +672,65 @@ class TopicMemeoryMechanism(nn.Module):
         out_embedding = torch.matmul(p_batch, target_weight)
         return p_batch
 
+
+class ContextTopicAttention(nn.Module):
+    
+    def __init__(self, encoder_hidden_size, topic_num, topic_emb_dim, threshold = 0.1):
+        super(ContextTopicAttention, self).__init__()
+        assert encoder_hidden_size == topic_emb_dim
+        self.encoder_hidden_size = encoder_hidden_size
+        self.topic_num = topic_num
+        self.topic_emb_dim = topic_emb_dim
+        self.W = nn.Parameter(torch.Tensor(encoder_hidden_size, topic_emb_dim))
+        nn.init.xavier_uniform_(self.W)
+        self.topic_threshold = threshold
+
+    def forward(self, encoder_memory, attention_dist, topic_emb, topic_dist):
+        """
+            encoder_memory: [batch_size,seq_len,hidden_dim]
+            attention_dist: [batch_size, seq_len]
+            topic_emb:      [topic_num, embedding_dim]
+            topic_dist:     [batch_size,topic_num]
+        """
+        batch_size = encoder_memory.shape[0]
+        topic_dist = F.softmax(topic_dist, dim=1)
+        max_topic_index = torch.argmax(topic_dist, dim=1)               # [batch_size, 1]
+        topic_dist = topic_dist - self.topic_threshold
+
+        seq_topic_w = torch.matmul(self.W, topic_emb.T)                 # [hidden_size, topic_num]
+        seq_topic_w = torch.matmul(encoder_memory, seq_topic_w)         # [batch_size, seq, topic_num]
+        seq_topic_w = F.softmax(seq_topic_w, dim=2).permute(0,2,1)      # [batch_size, topic_num, seq]
+        topic_hidden_state = torch.matmul(seq_topic_w, encoder_memory)  # [batch_size, topic_num, hidden_state]
+
+        # 计算加权的context表示
+        topic_dist = topic_dist.unsqueeze(dim=1)
+        topic_mean_hidden = torch.matmul(topic_dist, topic_hidden_state) #[batch_size, 1, hidden_state]
+        topic_mean_hidden = topic_mean_hidden.squeeze(dim=1)
+
+        # 计算最相关主题的context表示 怎么按照index 取出来
+        batch_size_index = torch.tensor([i for i in range(batch_size)]).to(encoder_memory.device)
+        topic_max_hidden = topic_hidden_state[batch_size_index, max_topic_index, :]
+
+        return topic_mean_hidden, topic_max_hidden, seq_topic_w
+
+
 if __name__ == '__main__':
     embed_size = 5
     topic_num = 10
     bow_size = 100
-    batch_size = 16
+    batch_size = 8
+    seq_len = 3
     topic_memory = TopicMemeoryMechanism(embed_size=embed_size,topic_num=topic_num,bow_size=bow_size)
     y_embed = torch.randn(batch_size, embed_size)
     topic_words = torch.randn(topic_num, bow_size)
     topic_represent = torch.randn(batch_size, topic_num)
     out = topic_memory(y_embed, topic_words, topic_represent)
-    print(out)
+    # print(out)
+
+    contextTopicAttention = ContextTopicAttention(encoder_hidden_size=embed_size, topic_num=topic_num, topic_emb_dim=embed_size)
+    encoder_memory = torch.randn(batch_size,seq_len, embed_size)
+    attention_dist = torch.randn(batch_size, seq_len)
+    topic_emb = torch.randn(topic_num, embed_size)
+    topic_dist = torch.randn(batch_size, topic_num)
+    topic_words_attention = contextTopicAttention(encoder_memory, attention_dist, topic_emb, topic_dist)
+    print(topic_words_attention[2].shape)
