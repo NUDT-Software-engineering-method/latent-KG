@@ -46,7 +46,8 @@ def predict(test_data_loader, model, ntm_model, opt):
                                   n_best=opt.n_best,
                                   block_ngram_repeat=opt.block_ngram_repeat,
                                   ignore_when_blocking=opt.ignore_when_blocking,
-                                  use_topic_words=opt.topic_words
+                                  use_topic_words=opt.topic_words,
+                                  use_encoder_attention = opt.encoder_attention
                                   )
 
     evaluate_beam_search(generator, test_data_loader, opt, delimiter_word)

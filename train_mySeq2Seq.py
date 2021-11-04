@@ -271,6 +271,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 logging.info("\nTraining ntm epoch: {}/{}".format(epoch, opt.epochs))
                 if last_train_ntm_epoch > 100:
                     begin_iterate_train_ntm = False
+                    # 仅使用生成的Loss更新
                     opt.add_two_loss = False
                     last_train_ntm_epoch = 0
             else:

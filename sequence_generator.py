@@ -39,7 +39,8 @@ class SequenceGenerator(object):
                  n_best=None,
                  block_ngram_repeat=0,
                  ignore_when_blocking=[],
-                 use_topic_words=False
+                 use_topic_words=False,
+                 use_encoder_attention = False
                  ):
         """Initializes the generator.
 
@@ -77,6 +78,7 @@ class SequenceGenerator(object):
         self.block_ngram_repeat = block_ngram_repeat
         self.ignore_when_blocking = ignore_when_blocking
         self.use_topic_words = use_topic_words
+        self.encoder_attention = use_encoder_attention
         if n_best is None:
             self.n_best = self.beam_size
         else:
@@ -97,7 +99,11 @@ class SequenceGenerator(object):
         max_src_len = src.size(1)
 
         # Encoding
-        memory_bank, encoder_final_state = self.model.encoder(src, src_lens)
+        if self.encoder_attention:
+            memory_bank, encoder_final_state, attention_out = self.model.encoder(src, src_lens)
+        else:
+            memory_bank, encoder_final_state = self.model.encoder(src, src_lens)
+            attention_out = encoder_final_state
         # [batch_size, max_src_len, memory_bank_size], [batch_size, memory_bank_size]
 
         # Generate topic representation
@@ -106,10 +112,10 @@ class SequenceGenerator(object):
             self.ntm_model.eval()
             if self.topic_type == 'z':
                 # TODO: 自己的模型需要修改
-                topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, attention_out)
                 #topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm)
             else:
-                _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, attention_out)
                 # _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm)
 
             topic_represent = topic_represent.repeat(self.beam_size, 1)  # [batch * beam_size, topic_num]
@@ -117,10 +123,10 @@ class SequenceGenerator(object):
             topic_represent = None
 
         max_num_oov = max([len(oov) for oov in oov_lists])  # max number of oov for each batch
-
+        #TODO：可修改为encoder_final_state
         # Init decoder state
         decoder_init_state = self.model.init_decoder_state(
-            encoder_final_state)  # [dec_layers, batch_size, decoder_size]
+            attention_out)  # [dec_layers, batch_size, decoder_size]
 
         # init initial_input to be BOS token
         # decoder_init_input = src.new_ones((batch_size * beam_size, 1)) * self.bos_idx  # [batch_size*beam_size, 1]

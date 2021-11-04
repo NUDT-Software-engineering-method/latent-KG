@@ -186,6 +186,7 @@ def compute_match_result_backup(trg_str_list, pred_str_list, type='exact'):
 def compute_match_result(trg_str_list, pred_str_list, type='exact', dimension=1):
     assert type in ['exact', 'sub'], "Right now only support exact matching and substring matching"
     assert dimension in [1, 2], "only support 1 or 2"
+    # 这里是一条数据的预测值
     num_pred_str = len(pred_str_list)
     num_trg_str = len(trg_str_list)
     if dimension == 1:

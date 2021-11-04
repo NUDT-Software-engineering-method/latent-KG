@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
 import pykp
-from pykp.modules import RNNEncoder, RNNDecoder, RNNDecoderTW
+from pykp.modules import RNNEncoder, RNNDecoder, RNNDecoderTW, AttentionRNNEncoder
 
 
 class Seq2SeqModel(nn.Module):
@@ -52,16 +52,27 @@ class Seq2SeqModel(nn.Module):
         self.attn_mode = opt.attn_mode
 
         self.device = opt.device
-
-        self.encoder = RNNEncoder(
-            vocab_size=self.vocab_size,
-            embed_size=self.emb_dim,
-            hidden_size=self.encoder_size,
-            num_layers=self.enc_layers,
-            bidirectional=self.bidirectional,
-            pad_token=self.pad_idx_src,
-            dropout=self.dropout
-        )
+        self.encoder_attention = opt.encoder_attention
+        if opt.encoder_attention:
+            self.encoder = AttentionRNNEncoder(
+                vocab_size=self.vocab_size,
+                embed_size=self.emb_dim,
+                hidden_size=self.encoder_size,
+                num_layers=self.enc_layers,
+                bidirectional=self.bidirectional,
+                pad_token=self.pad_idx_src,
+                dropout=self.dropout
+            )
+        else:
+            self.encoder = RNNEncoder(
+                vocab_size=self.vocab_size,
+                embed_size=self.emb_dim,
+                hidden_size=self.encoder_size,
+                num_layers=self.enc_layers,
+                bidirectional=self.bidirectional,
+                pad_token=self.pad_idx_src,
+                dropout=self.dropout
+            )
         self.topic_words = opt.topic_words
         if opt.topic_words:
             self.decoder = RNNDecoderTW(vocab_size=self.vocab_size,
@@ -301,4 +312,59 @@ class ContextNTM(NTM):
         g = self.generate(z)
         return z, g, self.decode(g), mu, logvar
 
-# class TENTM(NTM):
+class TopicEmbeddingNTM(ContextNTM):
+    def __init__(self, opt, bert_size, hidden_dim=500, l1_strength=0.001):
+        super(TopicEmbeddingNTM, self).__init__(opt, bert_size, hidden_dim=hidden_dim, l1_strength=l1_strength)
+        self.topic_embedding = torch.Tensor(self.topic_num, opt.word_vec_size)
+        self.topic_embedding = nn.Parameter(self.topic_embedding)
+        nn.init.xavier_uniform_(self.topic_embedding)
+
+        self.word_embedding = torch.Tensor(self.input_dim, opt.word_vec_size)
+        self.word_embedding = nn.Parameter(self.word_embedding)
+        nn.init.xavier_uniform_(self.word_embedding)
+
+        self.dropout = nn.Dropout(p = opt.dropout)
+    def generate(self, h):
+        g1 = torch.tanh(self.fcg1(h))
+        g1 = torch.tanh(self.fcg2(g1))
+        g1 = torch.tanh(self.fcg3(g1))
+        g1 = torch.tanh(self.fcg4(g1))
+        g1 = g1.add(h)
+        return g1
+
+    def decode(self, z):
+        z = F.softmax(z, dim=1)
+        word_embedding_d = self.dropout(self.word_embedding)
+        topic_words = torch.matmul(self.topic_embedding, word_embedding_d)
+        out = torch.matmul(z, topic_words)
+        out = F.softmax(out, dim=1)
+        return out
+
+
+    def forward(self, x, latent_state):
+        mu, logvar = self.encode(x.view(-1, self.input_dim), latent_state)
+        z = self.reparameterize(mu, logvar)
+        g = self.generate(z)
+        return z, g, self.decode(g), mu, logvar
+
+    def get_topic_words(self):
+        word_embedding_d = self.dropout(self.word_embedding)
+        topic_words = torch.matmul(self.topic_embedding, word_embedding_d)
+        return topic_words
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

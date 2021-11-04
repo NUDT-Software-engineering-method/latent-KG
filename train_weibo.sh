@@ -13,12 +13,12 @@
 
 # train my own model
 #CUDA_VISIBLE_DEVICES=0 nohup python train_mySeq2Seq.py -data_tag Weibo_s100_t10 -copy_attention -use_topic_represent -add_two_loss -joint_train -topic_attn -topic_type g -epochs 220 -early_stop_tolerance 50 -joint_train_strategy p_1_iterate -learning_rate_decay 0.9 -batch_size 128 -learning_rate 0.002 -use_contextNTM -topic_num 300 -topic_words > weibo.log 2>&1 &
-CUDA_VISIBLE_DEVICES=0  python nohup train_mySeq2Seq.py -data_tag Weibo_s100_t10 -copy_attention -use_topic_represent -add_two_loss -joint_train -topic_dec -topic_attn -topic_attn_in -topic_copy -epochs 220 -early_stop_tolerance 10 -joint_train_strategy p_1_iterate -learning_rate_decay 0.9 -batch_size 128 -learning_rate 0.002 -use_contextNTM -topic_words >weibo.log 2>&1 &
 
-CUDA_VISIBLE_DEVICES=0 nohup python  train_mySeq2Seq.py -data_tag StackExchange_s150_t10 -copy_attention -use_topic_represent -add_two_loss -joint_train -topic_dec -topic_attn -topic_attn_in -topic_copy -epochs 220 -early_stop_tolerance 10 -joint_train_strategy p_1_iterate -learning_rate_decay 0.9 -batch_size 128 -learning_rate 0.002 -use_contextNTM -topic_words >StackExchange_1.log 2>&1 &
+CUDA_VISIBLE_DEVICES=0  python train_mySeq2Seq.py -data_tag Weibo_s100_t10 -copy_attention -use_topic_represent -add_two_loss -joint_train -topic_dec -topic_attn -topic_attn_in -topic_copy -epochs 220 -early_stop_tolerance 10 -joint_train_strategy p_1_iterate -learning_rate_decay 0.9 -batch_size 128 -learning_rate 0.002 -use_contextNTM
+
 
 # python predict
-#CUDA_VISIBLE_DEVICES=0 python  predict_by_newSeq2Seq.py -model model/Weibo_s100_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.topic_attn_in.ntm_warm_up_0.copy.seed9527.emb150.vs50000.dec300.20211102-140536/e104.val_loss=1.290.model-0h-23m -batch_size 125 -use_contextNTM -topic_words
+#CUDA_VISIBLE_DEVICES=0 python  predict_by_newSeq2Seq.py -model model/Weibo_s100_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.topic_attn_in.ntm_warm_up_0.copy.seed9527.emb150.vs50000.dec300.20211103-142922/e104.val_loss=1.298.model-0h-24m -batch_size 125 -use_contextNTM -encoder_attention
 
 #CUDA_VISIBLE_DEVICES=0 python predict.py -batch_size 125 -model model/Weibo_s100_t10.joint_train.use_topic.topic_num50.topic_copy.topic_attn_in.ntm_warm_up_0.copy.seed9527.emb150.vs50000.dec300.20211102-131725/e3.val_loss=1.353.model-0h-01m -ntm_model model/Weibo_s100_t10.joint_train.use_topic.topic_num50.topic_copy.topic_attn_in.ntm_warm_up_0.copy.seed9527.emb150.vs50000.dec300.20211102-131725/e3.val_loss=1.353.model_ntm-0h-01m
 # predict evaluate
