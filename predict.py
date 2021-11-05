@@ -84,6 +84,15 @@ def process_opt(opt):
 
     if ".z_topic" in opt.model:
         opt.topic_type = 'z'
+
+    if '.topic_words' in opt.model:
+        opt.topic_words = True
+
+    if '.useContextNTM' in opt.model:
+        opt.use_contextNTM = True
+
+    if '.encoder_attention' in opt.model:
+        opt.encoder_attention = True
     # TODO: 需要修改
     # if ".use_topic" in opt.model:
     #     opt.use_topic_represent = True

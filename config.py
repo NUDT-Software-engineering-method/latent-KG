@@ -71,7 +71,7 @@ def model_opts(parser):
                         help="""Random seed used for the experiments
                                     reproducibility.""")
     # Embedding Options
-    parser.add_argument('-word_vec_size', type=int, default=100,
+    parser.add_argument('-word_vec_size', type=int, default=150,
                         help='Word embedding for both.')
 
     parser.add_argument('-share_embeddings', default=True, action='store_true',

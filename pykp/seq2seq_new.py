@@ -8,7 +8,7 @@ from pykp.context_topic_model.decoding_network import DecoderNetwork
 import torch
 import torch.nn as nn
 
-from pykp.modules import RNNDecoderTW
+from pykp.modules.rnn_decoder import RNNDecoderTW
 
 
 class TopicSeq2SeqModel(Seq2SeqModel):
@@ -18,7 +18,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         self.use_contextNTM = opt.use_contextNTM
         if self.use_contextNTM:
             print("Use old ntm model!")
-            # self.topic_model = ContextNTM(opt, bert_size=opt.encoder_size * self.num_directions)
+            #self.topic_model = ContextNTM(opt, bert_size=opt.encoder_size * self.num_directions)
             self.topic_model = TopicEmbeddingNTM(opt, bert_size=opt.encoder_size * self.num_directions)
         else:
             print("Use new ntm model!")
@@ -43,10 +43,10 @@ class TopicSeq2SeqModel(Seq2SeqModel):
 
         # Encoding
         if self.encoder_attention:
-            memory_bank, encoder_final_state, attention_out = self.encoder(src, src_lens)
+            memory_bank, encoder_final_state, hidden_topic_state = self.encoder(src, src_lens, self.topic_model.get_topic_embedding())
+            memory_bank = hidden_topic_state
         else:
             memory_bank, encoder_final_state = self.encoder(src, src_lens)
-            attention_out = encoder_final_state
         assert memory_bank.size() == torch.Size([batch_size, max_src_len, self.num_directions * self.encoder_size])
         assert encoder_final_state.size() == torch.Size([batch_size, self.num_directions * self.encoder_size])
 
@@ -54,12 +54,12 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         if self.use_contextNTM:
             topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance = self.topic_model(
                 src_bow,
-                attention_out)
+                encoder_final_state)
         else:
             topic_represent, topic_represent_g, recon_x, (
                 posterior_mean, posterior_variance, posterior_log_variance), (
                 prior_mean, prior_variance) = self.topic_model(
-                src_bow, attention_out)
+                src_bow, encoder_final_state)
         if self.topic_type == 'z':
             topic_latent = topic_represent
         else:
@@ -68,7 +68,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         if not begin_iterate_train_ntm:
             #TODO: 可修改为encoder_final_state
             # Decoding
-            h_t_init = self.init_decoder_state(attention_out)  # [dec_layers, batch_size, decoder_size]
+            h_t_init = self.init_decoder_state(encoder_final_state)  # [dec_layers, batch_size, decoder_size]
             max_target_length = trg.size(1)
 
             decoder_dist_all = []

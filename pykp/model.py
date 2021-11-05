@@ -4,8 +4,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
 import pykp
-from pykp.modules import RNNEncoder, RNNDecoder, RNNDecoderTW, AttentionRNNEncoder
-
+from pykp.modules.rnn_encoder import RNNEncoder,  AttentionRNNEncoder
+from pykp.modules.rnn_decoder  import RNNDecoder, RNNDecoderTW
 
 class Seq2SeqModel(nn.Module):
     """Container module with an encoder, deocder, embeddings."""
@@ -61,6 +61,7 @@ class Seq2SeqModel(nn.Module):
                 num_layers=self.enc_layers,
                 bidirectional=self.bidirectional,
                 pad_token=self.pad_idx_src,
+                topic_num= opt.topic_num,
                 dropout=self.dropout
             )
         else:

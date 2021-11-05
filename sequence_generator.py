@@ -100,10 +100,10 @@ class SequenceGenerator(object):
 
         # Encoding
         if self.encoder_attention:
-            memory_bank, encoder_final_state, attention_out = self.model.encoder(src, src_lens)
+            memory_bank, encoder_final_state, hidden_topic_state = self.model.encoder(src, src_lens,self.ntm_model.get_topic_embedding())
+            memory_bank = hidden_topic_state
         else:
             memory_bank, encoder_final_state = self.model.encoder(src, src_lens)
-            attention_out = encoder_final_state
         # [batch_size, max_src_len, memory_bank_size], [batch_size, memory_bank_size]
 
         # Generate topic representation
@@ -112,11 +112,11 @@ class SequenceGenerator(object):
             self.ntm_model.eval()
             if self.topic_type == 'z':
                 # TODO: 自己的模型需要修改
-                topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, attention_out)
+                topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
                 #topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm)
             else:
-                _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, attention_out)
-                # _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm)
+                _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                #_, topic_represent, _, _, _ = self.ntm_model(src_bow_norm)
 
             topic_represent = topic_represent.repeat(self.beam_size, 1)  # [batch * beam_size, topic_num]
         else:
@@ -126,7 +126,7 @@ class SequenceGenerator(object):
         #TODO：可修改为encoder_final_state
         # Init decoder state
         decoder_init_state = self.model.init_decoder_state(
-            attention_out)  # [dec_layers, batch_size, decoder_size]
+            encoder_final_state)  # [dec_layers, batch_size, decoder_size]
 
         # init initial_input to be BOS token
         # decoder_init_input = src.new_ones((batch_size * beam_size, 1)) * self.bos_idx  # [batch_size*beam_size, 1]
@@ -203,7 +203,7 @@ class SequenceGenerator(object):
             else:
                 decoder_dist, decoder_state, context, attn_dist, _, coverage = \
                     self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank, src_mask,
-                                       max_num_oov, src_oov, coverage, self.ntm_model.get_topic_words())
+                                       max_num_oov, src_oov, coverage, self.ntm_model.get_topic_embedding())
             log_decoder_dist = torch.log(decoder_dist + EPS)
 
             if self.review_attn:
