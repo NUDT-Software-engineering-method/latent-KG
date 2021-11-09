@@ -40,7 +40,7 @@ class SequenceGenerator(object):
                  block_ngram_repeat=0,
                  ignore_when_blocking=[],
                  use_topic_words=False,
-                 use_encoder_attention = False
+                 use_encoder_attention=False
                  ):
         """Initializes the generator.
 
@@ -100,10 +100,11 @@ class SequenceGenerator(object):
 
         # Encoding
         if self.encoder_attention:
-            memory_bank, encoder_final_state, hidden_topic_state = self.model.encoder(src, src_lens,self.ntm_model.get_topic_embedding())
-            memory_bank = hidden_topic_state
+            memory_bank, encoder_final_state, hidden_topic_state_memory = self.model.encoder(src, src_lens,
+                                                                                             self.ntm_model.get_topic_embedding())
         else:
             memory_bank, encoder_final_state = self.model.encoder(src, src_lens)
+            hidden_topic_state_memory = None
         # [batch_size, max_src_len, memory_bank_size], [batch_size, memory_bank_size]
 
         # Generate topic representation
@@ -113,17 +114,17 @@ class SequenceGenerator(object):
             if self.topic_type == 'z':
                 # TODO: 自己的模型需要修改
                 topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
-                #topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm)
+                # topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm)
             else:
                 _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
-                #_, topic_represent, _, _, _ = self.ntm_model(src_bow_norm)
+                # _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm)
 
             topic_represent = topic_represent.repeat(self.beam_size, 1)  # [batch * beam_size, topic_num]
         else:
             topic_represent = None
 
         max_num_oov = max([len(oov) for oov in oov_lists])  # max number of oov for each batch
-        #TODO：可修改为encoder_final_state
+        # TODO：可修改为encoder_final_state
         # Init decoder state
         decoder_init_state = self.model.init_decoder_state(
             encoder_final_state)  # [dec_layers, batch_size, decoder_size]
@@ -147,6 +148,8 @@ class SequenceGenerator(object):
 
         # expand memory_bank, src_mask
         memory_bank = memory_bank.repeat(beam_size, 1, 1)  # [batch * beam_size, max_src_len, memory_bank_size]
+        if hidden_topic_state_memory is not None:
+            hidden_topic_state_memory = hidden_topic_state_memory.repeat(beam_size, 1, 1)
         src_mask = src_mask.repeat(beam_size, 1)  # [batch * beam_size, src_seq_len]
         src_oov = src_oov.repeat(self.beam_size, 1)  # [batch * beam_size, src_seq_len]
         decoder_state = decoder_init_state.repeat(1, self.beam_size,
@@ -164,7 +167,8 @@ class SequenceGenerator(object):
 
         # Help functions for working with beams and batches
         def var(a):
-            return torch.tensor(a, requires_grad=False)
+            return a.clone().detach()
+            # return torch.tensor(a, requires_grad=False)
 
         '''
         Run beam search.
@@ -195,15 +199,15 @@ class SequenceGenerator(object):
 
             # run one step of decoding
             # [flattened_batch, vocab_size], [dec_layers, flattened_batch, decoder_size], [flattened_batch, memory_bank_size], [flattened_batch, src_len], [flattened_batch, src_len]
-            if not self.use_topic_words:
+            if self.use_topic_words:
                 decoder_dist, decoder_state, context, attn_dist, _, coverage = \
-                    self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank, src_mask,
+                    self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank, hidden_topic_state_memory, src_mask,
                                        max_num_oov,
                                        src_oov, coverage)
             else:
                 decoder_dist, decoder_state, context, attn_dist, _, coverage = \
                     self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank, src_mask,
-                                       max_num_oov, src_oov, coverage, self.ntm_model.get_topic_embedding())
+                                       max_num_oov, src_oov, coverage)
             log_decoder_dist = torch.log(decoder_dist + EPS)
 
             if self.review_attn:

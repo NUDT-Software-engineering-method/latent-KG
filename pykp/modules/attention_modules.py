@@ -319,7 +319,6 @@ class ContextTopicAttention(nn.Module):
 class TopicEmbeddingAttention(nn.Module):
     def __init__(self, encoder_hidden_size, topic_num, topic_emb_dim):
         super(TopicEmbeddingAttention, self).__init__()
-        assert encoder_hidden_size == topic_emb_dim
         self.encoder_hidden_size = encoder_hidden_size
         self.topic_num = topic_num
         self.topic_emb_dim = topic_emb_dim
@@ -335,15 +334,14 @@ class TopicEmbeddingAttention(nn.Module):
         """
         batch_size = encoder_memory.shape[0]
 
-        topic_seq_w = torch.matmul(self.W, topic_emb.T)  # [hidden_size, topic_num]
-        seq_topic_w = torch.matmul(encoder_memory, topic_seq_w)  # [batch_size, seq, topic_num]
+        topic_seq_w = torch.matmul(self.W, topic_emb.T)             # [hidden_size, topic_num]
+        seq_topic_w = torch.matmul(encoder_memory, topic_seq_w)     # [batch_size, seq, topic_num]
 
         # 计算在每个时间步t下面 加权的topic_embedding
-        seq_topic_w = F.softmax(seq_topic_w, dim=2)  # [batch_size, seq, topic_num]
-        hidden_topic_state = torch.matmul(seq_topic_w, topic_emb)  # [batch_size, seq, topic_embedding_size]
+        seq_topic_w = F.softmax(seq_topic_w, dim=2)                 # [batch_size, seq, topic_num]
+        hidden_topic_state = torch.matmul(seq_topic_w, topic_emb)   # [batch_size, seq, topic_embedding_size]
 
         return hidden_topic_state
-
 
 class TopicMemeoryMechanism(nn.Module):
     def __init__(self, topic_num, bow_size, embed_size):

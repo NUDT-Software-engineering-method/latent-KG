@@ -4,8 +4,9 @@ import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
 import pykp
-from pykp.modules.rnn_encoder import RNNEncoder,  AttentionRNNEncoder
-from pykp.modules.rnn_decoder  import RNNDecoder, RNNDecoderTW
+from pykp.modules.rnn_encoder import RNNEncoder, AttentionRNNEncoder
+from pykp.modules.rnn_decoder import RNNDecoder, RNNDecoderTW
+
 
 class Seq2SeqModel(nn.Module):
     """Container module with an encoder, deocder, embeddings."""
@@ -52,68 +53,36 @@ class Seq2SeqModel(nn.Module):
         self.attn_mode = opt.attn_mode
 
         self.device = opt.device
-        self.encoder_attention = opt.encoder_attention
-        if opt.encoder_attention:
-            self.encoder = AttentionRNNEncoder(
-                vocab_size=self.vocab_size,
-                embed_size=self.emb_dim,
-                hidden_size=self.encoder_size,
-                num_layers=self.enc_layers,
-                bidirectional=self.bidirectional,
-                pad_token=self.pad_idx_src,
-                topic_num= opt.topic_num,
-                dropout=self.dropout
-            )
-        else:
-            self.encoder = RNNEncoder(
-                vocab_size=self.vocab_size,
-                embed_size=self.emb_dim,
-                hidden_size=self.encoder_size,
-                num_layers=self.enc_layers,
-                bidirectional=self.bidirectional,
-                pad_token=self.pad_idx_src,
-                dropout=self.dropout
-            )
-        self.topic_words = opt.topic_words
-        if opt.topic_words:
-            self.decoder = RNNDecoderTW(vocab_size=self.vocab_size,
-                                        embed_size=self.emb_dim,
-                                        hidden_size=self.decoder_size,
-                                        num_layers=self.dec_layers,
-                                        memory_bank_size=self.num_directions * self.encoder_size,
-                                        coverage_attn=self.coverage_attn,
-                                        copy_attn=self.copy_attn,
-                                        review_attn=self.review_attn,
-                                        pad_idx=self.pad_idx_trg,
-                                        attn_mode=self.attn_mode,
-                                        dropout=self.dropout,
-                                        use_topic_represent=self.use_topic_represent,  # yue
-                                        topic_attn=self.topic_attn,
-                                        topic_attn_in=self.topic_attn_in,
-                                        topic_copy=self.topic_copy,
-                                        topic_dec=self.topic_dec,
-                                        topic_num=self.topic_num,
-                                        bow_size=opt.bow_vocab_size)
-        else:
-            self.decoder = RNNDecoder(
-                vocab_size=self.vocab_size,
-                embed_size=self.emb_dim,
-                hidden_size=self.decoder_size,
-                num_layers=self.dec_layers,
-                memory_bank_size=self.num_directions * self.encoder_size,
-                coverage_attn=self.coverage_attn,
-                copy_attn=self.copy_attn,
-                review_attn=self.review_attn,
-                pad_idx=self.pad_idx_trg,
-                attn_mode=self.attn_mode,
-                dropout=self.dropout,
-                use_topic_represent=self.use_topic_represent,  # yue
-                topic_attn=self.topic_attn,
-                topic_attn_in=self.topic_attn_in,
-                topic_copy=self.topic_copy,
-                topic_dec=self.topic_dec,
-                topic_num=self.topic_num
-            )
+
+        self.encoder = RNNEncoder(
+            vocab_size=self.vocab_size,
+            embed_size=self.emb_dim,
+            hidden_size=self.encoder_size,
+            num_layers=self.enc_layers,
+            bidirectional=self.bidirectional,
+            pad_token=self.pad_idx_src,
+            dropout=self.dropout
+        )
+
+        self.decoder = RNNDecoder(
+            vocab_size=self.vocab_size,
+            embed_size=self.emb_dim,
+            hidden_size=self.decoder_size,
+            num_layers=self.dec_layers,
+            memory_bank_size=self.num_directions * self.encoder_size,
+            coverage_attn=self.coverage_attn,
+            copy_attn=self.copy_attn,
+            review_attn=self.review_attn,
+            pad_idx=self.pad_idx_trg,
+            attn_mode=self.attn_mode,
+            dropout=self.dropout,
+            use_topic_represent=self.use_topic_represent,  # yue
+            topic_attn=self.topic_attn,
+            topic_attn_in=self.topic_attn_in,
+            topic_copy=self.topic_copy,
+            topic_dec=self.topic_dec,
+            topic_num=self.topic_num
+        )
 
         if self.bridge == 'dense':
             self.bridge_layer = nn.Linear(self.encoder_size * self.num_directions, self.decoder_size)
@@ -296,7 +265,7 @@ class ContextNTM(NTM):
 
     def __init__(self, opt, bert_size, hidden_dim=500, l1_strength=0.001):
         super(ContextNTM, self).__init__(opt, hidden_dim, l1_strength)
-        self.fc11 = nn.Linear( bert_size+ self.input_dim, hidden_dim)
+        self.fc11 = nn.Linear(bert_size + self.input_dim, hidden_dim)
         self.adapt_layer = nn.Linear(bert_size, self.input_dim)
 
     def encode(self, x, latent_state):
@@ -313,38 +282,31 @@ class ContextNTM(NTM):
         g = self.generate(z)
         return z, g, self.decode(g), mu, logvar
 
+
 class TopicEmbeddingNTM(ContextNTM):
     """
     Add topic word embedding in ntm
     """
+
     def __init__(self, opt, bert_size, hidden_dim=500, l1_strength=0.001):
         super(TopicEmbeddingNTM, self).__init__(opt, bert_size, hidden_dim=hidden_dim, l1_strength=l1_strength)
-        self.topic_embedding = torch.Tensor(self.topic_num, opt.encoder_size*2)
+        self.topic_embedding = torch.Tensor(self.topic_num, opt.word_vec_size)
         self.topic_embedding = nn.Parameter(self.topic_embedding)
-        nn.init.xavier_uniform_(self.topic_embedding)
+        nn.init.kaiming_uniform_(self.topic_embedding)
 
-        self.word_embedding = torch.Tensor(self.input_dim, opt.encoder_size*2)
+        self.word_embedding = torch.Tensor(self.input_dim, opt.word_vec_size)
         self.word_embedding = nn.Parameter(self.word_embedding)
-        nn.init.xavier_uniform_(self.word_embedding)
+        nn.init.kaiming_uniform_(self.word_embedding)
 
-        self.dropout = nn.Dropout(p = opt.dropout)
-    def generate(self, h):
-        g1 = torch.tanh(self.fcg1(h))
-        g1 = torch.tanh(self.fcg2(g1))
-        g1 = torch.tanh(self.fcg3(g1))
-        g1 = torch.tanh(self.fcg4(g1))
-        g1 = g1.add(h)
-        return g1
+        self.dropout = nn.Dropout(p=opt.dropout)
 
     def decode(self, z):
         # 这里加上softmax dropout对结果影响不大
         z = F.softmax(z, dim=1)
-        word_embedding_d = self.dropout(self.word_embedding)
-        topic_words = torch.matmul(self.topic_embedding, word_embedding_d.T)
+        topic_words = self.get_topic_words()
         out = torch.matmul(z, topic_words)
         out = F.softmax(out, dim=1)
         return out
-
 
     def forward(self, x, latent_state):
         mu, logvar = self.encode(x.view(-1, self.input_dim), latent_state)
@@ -358,7 +320,8 @@ class TopicEmbeddingNTM(ContextNTM):
         return topic_words
 
     def print_topic_words(self, vocab_dic, fn, n_top_words=10):
-        beta_exp = self.get_topic_words().data.cpu().numpy()
+        topic_words = torch.matmul(self.topic_embedding, self.word_embedding.T)
+        beta_exp = topic_words.data.cpu().numpy()
         logging.info("Writing to %s" % fn)
         fw = open(fn, 'w')
         for k, beta_k in enumerate(beta_exp):
@@ -369,18 +332,3 @@ class TopicEmbeddingNTM(ContextNTM):
 
     def get_topic_embedding(self):
         return self.topic_embedding
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

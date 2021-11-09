@@ -108,6 +108,12 @@ def process_opt(opt):
         opt.pred_path = opt.pred_path % opt.exp
 
     if not os.path.exists(opt.pred_path):
+        if 'StackExchange' in opt.pred_path:
+            opt.pred_path = opt.pred_path.replace('StackExchange', 'SE')
+        if 'encoder_attention' in opt.pred_path:
+            opt.pred_path = opt.pred_path.replace('encoder_attention', 'encoder_attn')
+        if 'useContextNTM' in opt.pred_path:
+            opt.pred_path = opt.pred_path.replace('useContextNTM', 'use_ocntm')
         os.makedirs(opt.pred_path)
 
     return opt

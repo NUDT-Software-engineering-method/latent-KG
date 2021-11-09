@@ -45,15 +45,16 @@ class RNNEncoder(nn.Module):
         return memory_bank.contiguous(), encoder_last_layer_final_state
 
 class AttentionRNNEncoder(RNNEncoder):
-    def __init__(self,vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, topic_num, dropout=0.0):
+    def __init__(self,vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, topic_num, topic_embed_dim,dropout=0.0):
         super(AttentionRNNEncoder, self).__init__(vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, dropout=dropout)
-        self.topic_embedding_biattention = TopicEmbeddingAttention(encoder_hidden_size=hidden_size*2, topic_num=topic_num, topic_emb_dim=hidden_size*2)
-        self.merge_layer = nn.Linear(2*2 * hidden_size,2* hidden_size)
+        self.topic_embedding_biattention = TopicEmbeddingAttention(encoder_hidden_size=hidden_size*2, topic_num=topic_num, topic_emb_dim=topic_embed_dim)
+        self.merge_layer = nn.Linear(2 * hidden_size + topic_embed_dim, 2 * hidden_size)
 
     def forward(self, src, src_lens, topic_embedding):
         """
         :param src: [batch, src_seq_len]
         :param src_lens: a list containing the length of src sequences for each batch, with len=batch
+        :param topic_embedding: a topic_embedding matrix [topic_num. topic_embedding_dim]
         :return:
         """
         src_embed = self.embedding(src)  # [batch, src_len, embed_size]
@@ -62,7 +63,11 @@ class AttentionRNNEncoder(RNNEncoder):
         # ([batch, seq_len, num_directions*hidden_size], [num_layer * num_directions, batch, hidden_size])
         memory_bank, _ = nn.utils.rnn.pad_packed_sequence(memory_bank, batch_first=True)  # unpack (back to padded)
 
-
+        # 计算与topic embedding的注意力
+        memory_bank = memory_bank.contiguous()
+        hidden_topic_state = self.topic_embedding_biattention(memory_bank, topic_embedding)     # [batch_size, seq, topic_embedding_dim]
+        hidden_topic_state = torch.cat((hidden_topic_state, memory_bank), dim=2)                # [batch_size, seq, 2*hidden + topic_embedding_dim]
+        hidden_topic_state = F.tanh(self.merge_layer(hidden_topic_state))                       # [batch_size, seq, 2*hidden]
         # only extract the final state in the last layer
         if self.bidirectional:
             encoder_last_layer_final_state = torch.cat((encoder_final_state[-1, :, :], encoder_final_state[-2, :, :]),
@@ -70,9 +75,7 @@ class AttentionRNNEncoder(RNNEncoder):
             # [batch, hidden_size*2]
         else:
             encoder_last_layer_final_state = encoder_final_state[-1, :, :]  # [batch, hidden_size]
-        memory_bank = memory_bank.contiguous()
-        hidden_topic_state = self.topic_embedding_biattention(memory_bank, topic_embedding)
-        hidden_topic_state = torch.cat((hidden_topic_state, memory_bank), dim=2)
-        hidden_topic_state = self.merge_layer(hidden_topic_state)
+
+        # 使用
 
         return memory_bank, encoder_last_layer_final_state, hidden_topic_state

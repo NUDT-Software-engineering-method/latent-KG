@@ -7,8 +7,9 @@ from pykp.model import Seq2SeqModel, ContextNTM, TopicEmbeddingNTM
 from pykp.context_topic_model.decoding_network import DecoderNetwork
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
 from pykp.modules.rnn_decoder import RNNDecoderTW
+from pykp.modules.rnn_encoder import AttentionRNNEncoder
 
 
 class TopicSeq2SeqModel(Seq2SeqModel):
@@ -16,9 +17,42 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         super(TopicSeq2SeqModel, self).__init__(opt)
         self.topic_type = opt.topic_type
         self.use_contextNTM = opt.use_contextNTM
+        self.encoder_attention = opt.encoder_attention
+        if opt.encoder_attention:
+            self.encoder = AttentionRNNEncoder(
+                vocab_size=self.vocab_size,
+                embed_size=self.emb_dim,
+                hidden_size=self.encoder_size,
+                num_layers=self.enc_layers,
+                bidirectional=self.bidirectional,
+                pad_token=self.pad_idx_src,
+                topic_num=opt.topic_num,
+                dropout=self.dropout,
+                topic_embed_dim=opt.word_vec_size
+            )
+        self.topic_words = opt.topic_words
+        if opt.topic_words:
+            self.decoder = RNNDecoderTW(vocab_size=self.vocab_size,
+                                        embed_size=self.emb_dim,
+                                        hidden_size=self.decoder_size,
+                                        num_layers=self.dec_layers,
+                                        memory_bank_size=self.num_directions * self.encoder_size,
+                                        coverage_attn=self.coverage_attn,
+                                        copy_attn=self.copy_attn,
+                                        review_attn=self.review_attn,
+                                        pad_idx=self.pad_idx_trg,
+                                        attn_mode=self.attn_mode,
+                                        dropout=self.dropout,
+                                        use_topic_represent=self.use_topic_represent,  # yue
+                                        topic_attn=self.topic_attn,
+                                        topic_attn_in=self.topic_attn_in,
+                                        topic_copy=self.topic_copy,
+                                        topic_dec=self.topic_dec,
+                                        topic_num=self.topic_num,
+                                        bow_size=opt.bow_vocab_size)
         if self.use_contextNTM:
             print("Use old ntm model!")
-            #self.topic_model = ContextNTM(opt, bert_size=opt.encoder_size * self.num_directions)
+            # self.topic_model = ContextNTM(opt, bert_size=opt.encoder_size * self.num_directions)
             self.topic_model = TopicEmbeddingNTM(opt, bert_size=opt.encoder_size * self.num_directions)
         else:
             print("Use new ntm model!")
@@ -26,6 +60,10 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                                               bert_size=opt.encoder_size * self.num_directions, infnet="combined",
                                               num_topics=opt.topic_num, model_type="prodLDA", hidden_sizes=(100, 100),
                                               activation="softplus", dropout=opt.dropout, learn_priors=True)
+
+        # 注意力机制
+        self.W = nn.Parameter(torch.Tensor(opt.encoder_size * self.num_directions))
+        self.tanh = nn.Tanh()
 
     def forward(self, src, src_lens, trg, src_oov, max_num_oov, src_mask, src_bow, begin_iterate_train_ntm=False,
                 num_trgs=None):
@@ -43,13 +81,19 @@ class TopicSeq2SeqModel(Seq2SeqModel):
 
         # Encoding
         if self.encoder_attention:
-            memory_bank, encoder_final_state, hidden_topic_state = self.encoder(src, src_lens, self.topic_model.get_topic_embedding())
-            memory_bank = hidden_topic_state
+            memory_bank, encoder_final_state, hidden_topic_state_bank = self.encoder(src, src_lens,
+                                                                                     self.topic_model.get_topic_embedding().detach())
         else:
             memory_bank, encoder_final_state = self.encoder(src, src_lens)
+            hidden_topic_state_bank = None
         assert memory_bank.size() == torch.Size([batch_size, max_src_len, self.num_directions * self.encoder_size])
         assert encoder_final_state.size() == torch.Size([batch_size, self.num_directions * self.encoder_size])
 
+        # # 计算注意力机制 并作为NTM的输入
+        # M = self.tanh(memory_bank)                                      # [batch_size, seq, hidden_size]
+        # alpha = F.softmax(torch.matmul(M, self.W), dim=1).unsqueeze(-1)     # [batch_size, seq, 1]
+        # attention_out = memory_bank * alpha                             # [batch_size, seq, hidden_size]
+        # attention_out = torch.sum(attention_out, dim=1)                     # [batch_size, hidden_size]
         # Topic Model forward
         if self.use_contextNTM:
             topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance = self.topic_model(
@@ -66,8 +110,6 @@ class TopicSeq2SeqModel(Seq2SeqModel):
             topic_latent = topic_represent_g
         # 只训练主题模型的化 无需进行解码
         if not begin_iterate_train_ntm:
-            #TODO: 可修改为encoder_final_state
-            # Decoding
             h_t_init = self.init_decoder_state(encoder_final_state)  # [dec_layers, batch_size, decoder_size]
             max_target_length = trg.size(1)
 
@@ -91,13 +133,13 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                 else:
                     h_t = h_t_next
                     y_t = y_t_next
-                if self.topic_words:
+                if self.topic_words and self.encoder_attention:
                     # decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
                     #     self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage,
                     #                  self.topic_model.get_topic_words())
                     decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
-                        self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage,
-                                     self.topic_model.get_topic_embedding())
+                        self.decoder(y_t, topic_latent, h_t, memory_bank, hidden_topic_state_bank, src_mask,
+                                     max_num_oov, src_oov, coverage)
                 else:
                     decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
                         self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage)
@@ -108,8 +150,8 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                     coverage_all.append(coverage.unsqueeze(1))  # [batch, 1, src_seq_len]
                 y_t_next = trg[:, t]  # [batch]
 
-            decoder_dist_all = torch.cat(decoder_dist_all, dim=1)  # [batch_size, trg_len, vocab_size]
-            attention_dist_all = torch.cat(attention_dist_all, dim=1)  # [batch_size, trg_len, src_len]
+            decoder_dist_all = torch.cat(decoder_dist_all, dim=1)       # [batch_size, trg_len, vocab_size]
+            attention_dist_all = torch.cat(attention_dist_all, dim=1)   # [batch_size, trg_len, src_len]
             if self.coverage_attn:
                 coverage_all = torch.cat(coverage_all, dim=1)  # [batch_size, trg_len, src_len]
                 assert coverage_all.size() == torch.Size((batch_size, max_target_length, max_src_len))
