@@ -141,6 +141,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
     seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, trg, src_oov, max_num_oov, src_mask,
                                                              src_bow_norm, begin_iterate_train_ntm=begin_iterate_train_ntm)
     decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
+
     if opt.use_contextNTM:
         topic_represent, topic_represent_drop, recon_batch, post_mu, post_logvar = topic_model_output
         ntm_loss = loss_function(recon_batch, src_bow, post_mu, post_logvar)
@@ -152,6 +153,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
     forward_time = time_since(start_time)
 
     start_time = time.time()
+
     if begin_iterate_train_ntm:
         loss = ntm_loss * 0
     else:
@@ -258,8 +260,9 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
             if epoch <= opt.p_seq2seq_e or not opt.joint_train:
                 optimizer = optimizer_ml
                 topicSeq2Seq_model.train()
-                topicSeq2Seq_model.topic_model.eval()
-                logging.info("\nTraining seq2seq epoch: {}/{}".format(epoch, opt.epochs))
+                opt.add_two_loss = True
+                # topicSeq2Seq_model.topic_model.eval()
+                logging.info("\nTraining seq2seq+ntm pre epoch: {}/{}".format(epoch, opt.epochs))
             elif begin_iterate_train_ntm:
                 last_train_ntm_epoch = last_train_ntm_epoch + 1
                 # loss add ntm loss
@@ -315,7 +318,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                         "NaN valid loss. Epoch: %d; batch_i: %d, total_batch: %d" % (epoch, batch_i, total_batch))
                     exit()
 
-                if current_valid_loss < best_valid_loss:  # update the best valid loss and save the model parameters
+                if current_valid_loss < best_valid_loss or (epoch > 100 and epoch %5==0):  # update the best valid loss and save the model parameters
                     print("Valid loss drops")
                     sys.stdout.flush()
                     best_valid_loss = current_valid_loss

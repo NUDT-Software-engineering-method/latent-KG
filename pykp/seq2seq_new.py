@@ -82,7 +82,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         # Encoding
         if self.encoder_attention:
             memory_bank, encoder_final_state, hidden_topic_state_bank = self.encoder(src, src_lens,
-                                                                                     self.topic_model.get_topic_embedding().detach())
+                                                                                     self.topic_model.get_topic_embedding())
         else:
             memory_bank, encoder_final_state = self.encoder(src, src_lens)
             hidden_topic_state_bank = None
@@ -108,16 +108,16 @@ class TopicSeq2SeqModel(Seq2SeqModel):
             topic_latent = topic_represent
         else:
             topic_latent = topic_represent_g
-        # 只训练主题模型的化 无需进行解码
+        # 只训练主题模型 无需进行解码
         if not begin_iterate_train_ntm:
-            h_t_init = self.init_decoder_state(encoder_final_state)  # [dec_layers, batch_size, decoder_size]
+            h_t_init = self.init_decoder_state(encoder_final_state)                     # [dec_layers, batch_size, decoder_size]
             max_target_length = trg.size(1)
 
             decoder_dist_all = []
             attention_dist_all = []
 
             if self.coverage_attn:
-                coverage = torch.zeros_like(src, dtype=torch.float).requires_grad_()  # [batch, max_src_seq]
+                coverage = torch.zeros_like(src, dtype=torch.float).requires_grad_()    # [batch, max_src_seq]
                 coverage_all = []
             else:
                 coverage = None

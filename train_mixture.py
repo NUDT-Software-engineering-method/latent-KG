@@ -17,8 +17,8 @@ EPS = 1e-6
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, mu, logvar):
     BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
+    # BCE = -(recon_x * x).sum(1).mean()
     KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-
     return BCE + KLD
 
 

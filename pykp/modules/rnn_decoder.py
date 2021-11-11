@@ -219,7 +219,7 @@ class RNNDecoderTW(RNNDecoder):
             context = p_soft_context * context + (1 - p_soft_context) * context_topic
         else:
             context, attn_dist, coverage = self.attention_layer(last_layer_h_next, memory_bank, src_mask, coverage)
-
+            attn_dist_topic =None
         # 计算topic_embedding之间的attention context
         # topic_context_mean, topic_context_top, seq_topic_weight = self.topic_embedding_attention(memory_bank, attn_dist,
         #                                                                                          topic_embedding,
@@ -269,10 +269,11 @@ class RNNDecoderTW(RNNDecoder):
         vocab_dist = self.softmax(vocab_dist)
 
         p_gen = None
+        attn_dist_final = None
         if self.copy_attn:
             if self.topic_copy:
                 # TODO : vocab_logit context
-                p_gen_input = torch.cat((vocab_logit, last_layer_h_next, y_emb.squeeze(0), topic_represent),
+                p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0), topic_represent),
                                         dim=1)  # [B, memory_bank_size + decoder_size + embed_size + topic_num]
             else:
                 p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0)),
@@ -280,14 +281,12 @@ class RNNDecoderTW(RNNDecoder):
 
             p_gen = F.softmax(self.p_gen_linear(p_gen_input), dim=1)  # [batch_size, 3]
             # split tensor
-            p0 = torch.chunk(p_gen, 3, dim=1)[0]
-            p1 = torch.chunk(p_gen, 3, dim=1)[1]
-            p2 = torch.chunk(p_gen, 3, dim=1)[2]
+            p0, p1, p2 = torch.chunk(p_gen, 3, dim=1)
             vocab_dist_ = p0 * vocab_dist
             attn_dist_ = p1 * attn_dist
             attn_dist_topic_ = p2 * attn_dist_topic
             attn_dist_final = torch.add(attn_dist_, attn_dist_topic_)
-
+            attn_dist_final = self.attention_layer.softmax(attn_dist_final, src_mask)
             if max_num_oovs > 0:
                 extra_zeros_topic = attn_dist_topic_.new_zeros((batch_size, max_num_oovs))
                 extra_zeros = vocab_dist_.new_zeros((batch_size, max_num_oovs))
@@ -299,4 +298,5 @@ class RNNDecoderTW(RNNDecoder):
             final_dist = vocab_dist
             assert final_dist.size() == torch.Size([batch_size, self.vocab_size])
 
-        return final_dist, h_next, context, attn_dist, p_gen, coverage
+        # return final_dist, h_next, context, attn_dist, p_gen, coverage
+        return final_dist, h_next, context, attn_dist_final, p_gen, coverage

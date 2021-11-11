@@ -10,7 +10,7 @@ import sys
 import argparse
 
 import config
-from sequence_generator import SequenceGenerator, TopicSequenceGenrator
+from sequence_generator import SequenceGenerator
 from utils.time_log import time_since
 from evaluate import evaluate_beam_search
 from utils.data_loader import load_data_and_vocab

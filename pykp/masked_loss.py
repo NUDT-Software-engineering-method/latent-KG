@@ -32,6 +32,7 @@ def masked_cross_entropy(class_dist, target, trg_mask, trg_lens=None,
         losses = losses + lambda_coverage * coverage_losses
     if trg_mask is not None:
         losses = losses * trg_mask
+
     '''
     if divided_by_seq_len:
         trg_lens_tensor = torch.FloatTensor(trg_lens).to(target.device).requires_grad_()
@@ -40,6 +41,7 @@ def masked_cross_entropy(class_dist, target, trg_mask, trg_lens=None,
     else:
         loss = losses.sum(dim=1) # [batch_size]
     '''
+
     loss = losses.sum(dim=1)  # [batch_size]
     if orthogonal_loss:
         orthogonal_loss = compute_orthogonal_loss(delimiter_hidden_states, delimiter_hidden_states_lens)  # [batch_size]
