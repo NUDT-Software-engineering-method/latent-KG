@@ -21,7 +21,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         # keys of matter. `src_oov` is for mapping pointed word to dict,
         # `oov_dict` is for determining the dim of predicted logit: dim=vocab_size+max_oov_dict_in_batch
         assert type in ['one2one', 'one2many']
-        keys = ['src', 'trg', 'trg_copy', 'src_oov', 'oov_dict', 'oov_list', 'src_str', 'trg_str', 'src_bow']
+        keys = ['post_id', 'src', 'trg', 'trg_copy', 'src_oov', 'oov_dict', 'oov_list', 'src_str', 'trg_str', 'src_bow']
 
         filtered_examples = []
 
@@ -106,7 +106,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
 
         oov_lists = [b['oov_list'] for b in batches]
         src_bow = [b['src_bow'] for b in batches]
-
+        post_id = [b['post_id'] for b in batches]
         # sort all the sequences in the order of source lengths, to meet the requirement of pack_padded_sequence
         seq_pairs = sorted(zip(src, trg, trg_oov, src_oov, oov_lists, src_bow), key=lambda p: len(p[0]), reverse=True)
         src, trg, trg_oov, src_oov, oov_lists, src_bow = zip(*seq_pairs)
@@ -119,7 +119,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         src_oov, _, _ = self._pad(src_oov)
         src_bow = self._pad_bow(src_bow)
 
-        return src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow
+        return post_id, src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow
 
     def collate_fn_one2many(self, batches):
         assert self.type == 'one2many', 'The type of dataset should be one2many.'
@@ -236,7 +236,7 @@ def build_dataset(src_trgs_pairs, word2idx, bow_dictionary, opt, mode='one2one',
                    else word2idx[UNK_WORD] for w in target]
 
             example['trg'] = trg
-
+            example['post_id'] = idx
             example['src_oov'] = src_oov
             example['oov_dict'] = oov_dict
             example['oov_list'] = oov_list

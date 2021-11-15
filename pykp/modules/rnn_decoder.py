@@ -176,11 +176,17 @@ class RNNDecoderTW(RNNDecoder):
         #                                                        topic_emb_dim=hidden_size)
         if copy_attn:
             if topic_copy:
-                self.p_gen_linear = nn.Linear(embed_size + hidden_size + memory_bank_size + topic_num, 3)
+                self.p_gen_linear = nn.Linear(embed_size + hidden_size + memory_bank_size + topic_num, 1)
             else:
                 self.p_gen_linear = nn.Linear(embed_size + hidden_size + memory_bank_size, 1)
-        self.p_soft_cgate_linear = nn.Linear(hidden_size * 2, 1)
-
+        self.p_soft_cgate_linear = nn.Linear(hidden_size * 3 + self.topic_num + embed_size, 1, bias=False)
+        self.attention_topic_layer = TopicAttention(
+            decoder_size=hidden_size,
+            memory_bank_size=memory_bank_size,
+            coverage_attn=coverage_attn,
+            attn_mode=attn_mode,
+            topic_num=topic_num
+        )
     def forward(self, y, topic_represent, h, memory_bank, hidden_topic_bank, src_mask, max_num_oovs, src_oov, coverage):
         """
         topic_embedding:[topic_num, topic_num_emb]
@@ -211,11 +217,11 @@ class RNNDecoderTW(RNNDecoder):
         if self.topic_attn_in:
             context, attn_dist, coverage = self.attention_layer(last_layer_h_next, memory_bank, topic_represent,
                                                                 src_mask, coverage)
-            context_topic, attn_dist_topic, coverage_topic = self.attention_layer(last_layer_h_next, hidden_topic_bank,
+            context_topic, attn_dist_topic, coverage_topic = self.attention_topic_layer(last_layer_h_next, hidden_topic_bank,
                                                                                   topic_represent,
                                                                                   src_mask, coverage)
             # 合并两个context 和context_topic
-            p_soft_context = self.p_soft_cgate_linear(torch.cat((context, context_topic), dim=1))
+            p_soft_context = self.sigmoid(self.p_soft_cgate_linear(torch.cat((context, context_topic, topic_represent, last_layer_h_next, y_emb.squeeze(0),), dim=1)))
             context = p_soft_context * context + (1 - p_soft_context) * context_topic
         else:
             context, attn_dist, coverage = self.attention_layer(last_layer_h_next, memory_bank, src_mask, coverage)
@@ -263,9 +269,7 @@ class RNNDecoderTW(RNNDecoder):
 
         vocab_logit = self.vocab_dist_linear_1(vocab_dist_input)
         # vocab_topic_logit = self.vocab_dist_linear_topic_1(vocab_dist_input_topic)
-
         vocab_dist = self.vocab_dist_linear_2(self.dropout(vocab_logit))
-
         vocab_dist = self.softmax(vocab_dist)
 
         p_gen = None
@@ -279,24 +283,20 @@ class RNNDecoderTW(RNNDecoder):
                 p_gen_input = torch.cat((context, last_layer_h_next, y_emb.squeeze(0)),
                                         dim=1)  # [B, memory_bank_size + decoder_size + embed_size]
 
-            p_gen = F.softmax(self.p_gen_linear(p_gen_input), dim=1)  # [batch_size, 3]
             # split tensor
-            p0, p1, p2 = torch.chunk(p_gen, 3, dim=1)
-            vocab_dist_ = p0 * vocab_dist
-            attn_dist_ = p1 * attn_dist
-            attn_dist_topic_ = p2 * attn_dist_topic
-            attn_dist_final = torch.add(attn_dist_, attn_dist_topic_)
-            attn_dist_final = self.attention_layer.softmax(attn_dist_final, src_mask)
+            # p0, p1, p2 = torch.chunk(p_gen, 3, dim=1)
+            p_gen = self.sigmoid(self.p_gen_linear(p_gen_input))
+            vocab_dist_ = p_gen * vocab_dist
+            attn_dist_ = (1 - p_gen) * attn_dist
             if max_num_oovs > 0:
-                extra_zeros_topic = attn_dist_topic_.new_zeros((batch_size, max_num_oovs))
                 extra_zeros = vocab_dist_.new_zeros((batch_size, max_num_oovs))
                 vocab_dist_ = torch.cat((vocab_dist_, extra_zeros), dim=1)
 
-            final_dist = vocab_dist_.scatter_add(1, src_oov, attn_dist_final)
+            final_dist = vocab_dist_.scatter_add(1, src_oov, attn_dist_)
             assert final_dist.size() == torch.Size([batch_size, self.vocab_size + max_num_oovs])
         else:
             final_dist = vocab_dist
             assert final_dist.size() == torch.Size([batch_size, self.vocab_size])
 
-        # return final_dist, h_next, context, attn_dist, p_gen, coverage
-        return final_dist, h_next, context, attn_dist_final, p_gen, coverage
+        return final_dist, h_next, context, attn_dist, p_gen, coverage
+        # return final_dist, h_next, context, attn_dist_final, p_gen, coverage

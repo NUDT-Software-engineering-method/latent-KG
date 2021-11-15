@@ -61,7 +61,7 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
     with torch.no_grad():
         for batch_i, batch in enumerate(data_loader):
             if not opt.one2many:  # load one2one dataset
-                src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow = batch
+                post_id, src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow = batch
             else:  # load one2many dataset
                 src, src_lens, src_mask, src_oov, oov_lists, src_str_list, trg_str_2dlist, trg, trg_oov, trg_lens, trg_mask, _ = batch
                 num_trgs = [len(trg_str_list) for trg_str_list in
@@ -120,7 +120,7 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
 
 def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer, total_batch, begin_iterate_train_ntm):
     # train for one batch
-    src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow = batch
+    post_id, src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow = batch
     max_num_oov = max([len(oov) for oov in oov_lists])  # max number of oov for each batch
 
     # move data to GPU if available
@@ -318,7 +318,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                         "NaN valid loss. Epoch: %d; batch_i: %d, total_batch: %d" % (epoch, batch_i, total_batch))
                     exit()
 
-                if current_valid_loss < best_valid_loss or (epoch > 100 and epoch %5==0):  # update the best valid loss and save the model parameters
+                if current_valid_loss < best_valid_loss:  # update the best valid loss and save the model parameters
                     print("Valid loss drops")
                     sys.stdout.flush()
                     best_valid_loss = current_valid_loss

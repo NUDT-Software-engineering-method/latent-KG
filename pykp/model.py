@@ -316,7 +316,7 @@ class TopicEmbeddingNTM(ContextNTM):
         topic_words = topic_words.transpose(1, 0)
         return topic_words
 
-    def print_topic_words(self, vocab_dic, fn, n_top_words=10):
+    def print_topic_words(self, vocab_dic, fn, n_top_words=15):
         topic_words = self.get_topic_words()
         beta_exp = topic_words.data.cpu().numpy()
         logging.info("Writing to %s" % fn)
