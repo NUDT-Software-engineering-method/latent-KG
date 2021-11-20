@@ -140,6 +140,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
 
     ref_docs = ref_docs.to(opt.device)
     ref_oovs = ref_oovs.to(opt.device)
+    ref_doc_lens = ref_doc_lens.to(opt.device)
     # graph = graph.to(opt.device)
     # model.train()
     optimizer.zero_grad()

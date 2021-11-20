@@ -9,21 +9,27 @@ import torch.nn.functional as F
 
 
 class Attention(nn.Module):
-    def __init__(self, decoder_size, memory_bank_size):
+    def __init__(self, decoder_size, memory_bank_size, topic_num):
         """Bahdanau style attention"""
         super(Attention, self).__init__()
         self.v = nn.Linear(decoder_size, 1, bias=False)
         self.decode_project = nn.Linear(decoder_size, decoder_size, bias=False)
         self.memory_project = nn.Linear(memory_bank_size, decoder_size, bias=False)
+        self.topic_project = nn.Linear(topic_num, decoder_size, bias=False)
 
-    def score(self, memory_bank, decoder_state):
+    def score(self, memory_bank, decoder_state, topic_dist):
         batch_size, max_input_seq_len, memory_bank_size = memory_bank.size()
         decoder_size = decoder_state.size(1)
-        encoder_feature = self.memory_project(memory_bank)  # [batch_size, max_input_seq_len, decoder size]
-        dec_feature = self.decode_project(decoder_state)  # [batch_size, decoder_size]
+        encoder_feature = self.memory_project(memory_bank)          # [batch_size, max_input_seq_len, decoder size]
+
+        dec_feature = self.decode_project(decoder_state)            # [batch_size, decoder_size]
         dec_feature_expanded = dec_feature.unsqueeze(1).expand(batch_size, max_input_seq_len, decoder_size).contiguous()
-        att_features = encoder_feature + dec_feature_expanded  # [batch_size, max_input_seq_len, decoder_size]
-        e = att_features.tanh()  # [batch_size, max_input_seq_len, decoder_size]
+
+        topic_feature = self.topic_project(topic_dist)
+        topic_feature_expanded = topic_feature.unsqueeze(1).expand(batch_size, max_input_seq_len, decoder_size).contiguous()
+
+        att_features = encoder_feature + dec_feature_expanded + topic_feature_expanded # [batch_size, max_input_seq_len, decoder_size]
+        e = att_features.tanh()         # [batch_size, max_input_seq_len, decoder_size]
         scores = self.v(e).squeeze(-1)  # [batch_size, max_input_seq_len]
         return scores
 
@@ -63,7 +69,7 @@ class HierAttention(nn.Module):
         self.decode_project = nn.Linear(decoder_size, decoder_size, bias=False)
         self.topic_project = nn.Linear(topic_num, decoder_size, bias=False)
         self.memory_project = nn.Linear(memory_bank_size, decoder_size, bias=False)
-        self.doc_attention = Attention(decoder_size, memory_bank_size)
+        self.doc_attention = Attention(decoder_size, memory_bank_size, topic_num)
 
     def score(self, memory_bank, decoder_state, topic_dist):
         """
@@ -95,7 +101,7 @@ class HierAttention(nn.Module):
 
         word_scores = self.score(word_memory, decoder_state,
                                  topic_dist)  # [batch_size,max_input_seq_len1, max_input_seq_len2]
-        doc_scores = self.doc_attention.score(doc_memory, decoder_state)  # [batch_size,max_input_seq_len1]
+        doc_scores = self.doc_attention.score(doc_memory, decoder_state, topic_dist)  # [batch_size,max_input_seq_len1]
 
         # don't attend over padding
         if word_mask is not None:

@@ -137,7 +137,7 @@ class RefRNNEncoder(RNNEncoder):
         packed_doc_ref_lens_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_doc_lens, ref_lens, batch_first=True, enforce_sorted=False)
 
         packed_ref_word_reps, packed_ref_doc_reps = self._forward(self.rnn_ref, packed_ref_docs_by_ref_lens.data,
-                                                                  packed_doc_ref_lens_by_ref_lens.data)
+                                                                  packed_doc_ref_lens_by_ref_lens.data.cpu())
         ref_word_reps, _ = nn.utils.rnn.pad_packed_sequence(
             nn.utils.rnn.PackedSequence(data=packed_ref_word_reps,
                                         batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
