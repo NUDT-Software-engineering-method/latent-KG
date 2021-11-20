@@ -3,19 +3,13 @@ import torch
 import pykp.io as io
 
 
-def read_tokenized_src_file(src_file):
+def read_tokenized_src_file(src_file, max_src_len):
     references = []
     filtered_cnt = 0
     for src_line in open(src_file, 'r'):
-        if (len(src_line.strip()) == 0):
-            continue
-        title_and_context = src_line.strip().split(io.EOS_WORD)
-        [title, context] = title_and_context
-
-        title_word_list = title.strip().split(' ')
-        context_word_list = context.strip().split(' ')
-        src_word_list = title_word_list + [io.TITLE_ABS_SEP] + context_word_list
-        if len(src_word_list) > 400:
+        src_word_list = src_line.strip().split(' ')
+        src_word_list = src_word_list[:max_src_len]
+        if len(src_word_list) == 0:
             filtered_cnt += 1
             continue
         references.append(' '.join(src_word_list))
@@ -28,14 +22,9 @@ def read_src_and_trg_files(src_file, trg_file, use_doc=True, use_kp=True):
     filtered_cnt = 0
     for line_idx, (src_line, trg_line) in enumerate(zip(open(src_file, 'r'), open(trg_file, 'r'))):
         # process source line
-        if (len(src_line.strip()) == 0):
+        if len(src_line.strip()) == 0:
             continue
-        title_and_context = src_line.strip().split(io.EOS_WORD)
-        [title, context] = title_and_context
-
-        title_word_list = title.strip().split(' ')
-        context_word_list = context.strip().split(' ')
-        src_word_list = title_word_list + [io.TITLE_ABS_SEP] + context_word_list
+        src_word_list = src_line.strip().split(" ")
 
         if len(src_word_list) > 400:
             filtered_cnt += 1

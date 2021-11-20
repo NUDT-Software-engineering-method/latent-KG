@@ -55,8 +55,9 @@ def my_own_opts(parser):
     parser.add_argument('-topic_attn_in', default=False, action='store_true', help='add topic in computing attn score')
     parser.add_argument('-topic_words', default=False, action='store_true', help='add topic words in decoder')
     parser.add_argument('-encoder_attention', default=False, action='store_true', help='add attention layer in encoder')
-    parser.add_argument('-topic_embedding', default=False, action='store_true', help='add attention layer in topic_embedding in decoder')
-
+    parser.add_argument('-topic_embedding', default=False, action='store_true',
+                        help='add attention layer in topic_embedding in decoder')
+    parser.add_argument('-use_refs', default=False, action='store_true', help='add ref docs layer in encoder and decoder')
     parser.add_argument('-load_pretrain_ntm', default=False, action='store_true')
     parser.add_argument('-only_train_ntm', default=False, action='store_true')
     parser.add_argument('-check_pt_ntm_model_path', type=str)
@@ -543,3 +544,31 @@ def post_predict_opts(parser):
                         help='The predictions has already been separated into present keyphrases and absent keyphrases')
     parser.add_argument('-reverse_sorting', action="store_true", default=False,
                         help='Only effective in target separated.')
+
+
+def retriever_opts(parser):
+    parser.add_argument('--ref_doc_path', '-ref_doc_path', type=str, default=None,
+                        help='Path to reference document texts')
+    parser.add_argument('--ref_kp_path', '-ref_kp_path', type=str, default=None,
+                        help='Path to reference document keyphrase')
+    parser.add_argument('--ref_doc', '-ref_doc', action="store_true",
+                        help='use retrieved doc')
+    parser.add_argument('--ref_kp', '-ref_kp', action="store_true",
+                        help='use retrieved keyphrase')
+    parser.add_argument('--hash_path', '-hash_path', type=str,
+                        default=None,
+                        help='Path to built reference document hash index')
+    parser.add_argument('--n_ref_docs', '-n_ref_docs', type=int, default=3,
+                        help='retriever n references for every doc')
+    parser.add_argument('--n_topic_words', '-n_topic_words', type=int, default=1,
+                        help='construct graph use n topic words for every doc')
+    parser.add_argument('--num_workers', '-num_workers', type=int, default=None,
+                        help='Number of CPU processes (for tokenizing, etc)')
+    parser.add_argument('--use_multidoc_graph', '-use_multidoc_graph', action="store_true",
+                        help='perform GAT to gather information from reference documents')
+    parser.add_argument('--use_multidoc_copy', '-use_multidoc_copy', action="store_true",
+                        help='copy other documents')
+    parser.add_argument('--random_search', '-random_search', action="store_true",
+                        help='random_search documents')
+    parser.add_argument('--dense_retrieve', '-dense_retrieve', action="store_true",
+                        help='use dense_retrieve')

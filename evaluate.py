@@ -133,7 +133,8 @@ def evaluate_beam_search(generator, one2many_data_loader, opt, delimiter_word='<
             if (batch_i + 1) % interval == 0:
                 print("Batch %d: Time for running beam search: %.1f" % (batch_i + 1, time_since(start_time)))
                 sys.stdout.flush()
-            src, src_lens, src_mask, src_oov, oov_lists, src_str_list, trg_str_2dlist, _, _, _, _, original_idx_list, src_bow = batch
+            src, src_lens, src_mask, src_oov, oov_lists, src_str_list, trg_str_2dlist, _, _, _, _, original_idx_list, src_bow, \
+            ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph = batch
             """
             src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
             src_lens: a list containing the length of src sequences for each batch, with len=batch
@@ -146,8 +147,16 @@ def evaluate_beam_search(generator, one2many_data_loader, opt, delimiter_word='<
             src_oov = src_oov.to(opt.device)
             src_bow = src_bow.to(opt.device)
 
-            beam_search_result = generator.beam_search(src, src_lens, src_oov, src_mask, src_bow, oov_lists,
-                                                       opt.word2idx, opt.max_eos_per_output_seq)
+            ref_docs = ref_docs.to(opt.device)
+            ref_oovs = ref_oovs.to(opt.device)
+
+            ref_inputs = (ref_docs, ref_lens, ref_doc_lens, ref_oovs)
+            if not opt.use_refs:
+                beam_search_result = generator.beam_search(src, src_lens, src_oov, src_mask, src_bow, oov_lists,
+                                                           opt.word2idx, opt.max_eos_per_output_seq)
+            else:
+                beam_search_result = generator.beam_search_by_refs(src, src_lens, src_oov, src_mask, src_bow, oov_lists,
+                                                                   opt.word2idx, ref_inputs, opt.max_eos_per_output_seq)
             pred_list = preprocess_beam_search_result(beam_search_result, opt.idx2word, opt.vocab_size, oov_lists,
                                                       opt.word2idx[pykp.io.EOS_WORD], opt.word2idx[pykp.io.UNK_WORD],
                                                       opt.replace_unk, src_str_list)

@@ -33,13 +33,16 @@ class SBERTDocRanker():
     Scores new queries by taking sparse dot products.
     """
 
-    def __init__(self, opt):
+    def __init__(self, opt, word2idx, train_opera='train'):
         self.opt = opt
+        self.train_opera = train_opera
+        self.word2idx = word2idx
         # model_name = 'bert-base-nli-mean-tokens'
-        model_name = "allenai-specter"
-        # model_name = "output/training_continue_training-allenai-specter-2021-05-09_07-17-03"
+        # 加载roberta-large-nli-stsb-mean-tokens。中文可以使用paraphrase-multilingual-mpnet-base-v2（好而慢）或者paraphrase-multilingual-MiniLM-L12-v2（快但是差一些）
+        # model_name = "paraphrase-multilingual-mpnet-base-v2"
+        model_name = "output/training_continue_training-allenai-specter-2021-05-09_07-17-03"
         self.model = SentenceTransformer(model_name)
-        embed_cache_path = opt.save_data_dir + '/kp20k-embeddings-{}.pkl'.format(model_name.replace('/', '_'))
+        embed_cache_path = opt.data_dir + '/embeddings-{}.pkl'.format(model_name.replace('/', '_'))
         # embed_cache_path = 'data/kp20k_sorted50/Full50_Dense_RefKP_RefDoc_RefGraph_CopyRef/kp20k-embeddings-{}.pkl'.format(model_name.replace('/', '_'))
         self.index, self.tfidf_vectorizer = self.build_index(embed_cache_path)
 
@@ -64,19 +67,26 @@ class SBERTDocRanker():
 
         # Check if embedding cache path exists
         if not os.path.exists(embed_cache_path):
-            ref_docs = read_tokenized_src_file(self.opt.ref_doc_path)
+            if self.train_opera == 'train':
+                ref_doc_path = self.opt.train_src
+            elif self.train_opera == 'valid':
+                ref_doc_path = self.opt.valid_src
+            else:
+                ref_doc_path = self.opt.test_src
+            ref_docs = read_tokenized_src_file(ref_doc_path, self.opt.max_src_len)
             corpus_embeddings = self.model.encode(ref_docs, show_progress_bar=True, convert_to_numpy=True)
 
-            ### Create the FAISS index
+            ### Create the FAITS index
             print("Start creating FAISS index")
             # First, we need to normalize vectors to unit length
             normalize_L2(corpus_embeddings)
             # corpus_embeddings = corpus_embeddings / np.linalg.norm(corpus_embeddings, axis=1, keepdims=True)
-
+            # warn： default token_pattern will ignore singe token
+            print("The tf-idf bow len: {}".format(len(self.word2idx)))
             tfidf_vectorizer = TfidfVectorizer(tokenizer=str.split,
-                                               vocabulary={w: i for w, i in self.opt.vocab["word2idx"].items()
-                                                           if i < self.opt.vocab_size})
-            tfidf_vectorizer.fit(ref_docs)
+                                               vocabulary={w: i for w, i in self.word2idx.items()
+                                                           if i < len(self.word2idx)}, token_pattern=r"(?u)\b\w+\b")
+            tfidf_vectorizer = tfidf_vectorizer.fit(ref_docs)
 
             id2word = {}
             for w, id in tfidf_vectorizer.vocabulary_.items():
@@ -101,7 +111,7 @@ class SBERTDocRanker():
         index.add(corpus_embeddings)
 
         return index, tfidf_vectorizer
-        
+
     def batch_closest_docs(self, queries, k=1):
         query_embedding = self.model.encode(queries, show_progress_bar=True, convert_to_numpy=True)
 
@@ -117,7 +127,7 @@ class SBERTDocRanker():
         distances[distances < 0] = 0
         return corpus_ids, distances
 
-    def batch_words_tfidf(self, queries, k=20, word2idx=None):
+    def batch_words_tfidf(self, queries, k=3, word2idx=None):
         batch_tfidf = self.tfidf_vectorizer.transform(queries)
 
         # batch_sorted_idx, batch_tfidf = row_topk_csr(batch_tfidf.data, batch_tfidf.indices, batch_tfidf.indptr, k)
@@ -130,9 +140,9 @@ class SBERTDocRanker():
                        for topic_words_id, words_tfidf in zip(batch_sorted_idx, batch_tfidf)]
         return words2tfidf
 
-
 def _top_k(d, r, k):
-    return zip(*sorted(zip(d, r), reverse=True)[:k])
+    tmp = sorted(zip(d, r), reverse=True)[:k]
+    return zip(*tmp)
 
 
 def top_k(m, k):
@@ -140,6 +150,14 @@ def top_k(m, k):
     Keep only the top k elements of each row in a csr_matrix
     """
     ml = m.tolil()
-    ms = [_top_k(d, r, k) for d, r in zip(ml.data, ml.rows)]
+    # print("ml's shape is{}".format(ml.shape))
+    ms = []
+    cnt = 0  # 251
+    for d, r in zip(ml.data, ml.rows):
+        if len(d) == 0:
+            cnt += 1
+        else:
+            ms.append(_top_k(d, r, k))
+    # print("cnt empty is {}".format(cnt))
+    # ms = [_top_k(d, r, k) for d, r in zip(ml.data, ml.rows)]
     return zip(*ms)
-

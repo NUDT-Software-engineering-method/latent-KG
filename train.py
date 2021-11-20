@@ -18,6 +18,7 @@ from utils.data_loader import load_data_and_vocab
 
 import os
 
+
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 
@@ -121,9 +122,11 @@ def process_opt(opt):
     if opt.use_contextNTM:
         opt.exp += '.useContextNTM'
 
-
     if opt.encoder_attention:
-        opt.exp += '.encoder_attention'
+        opt.exp += '.encoder_attn'
+
+    if opt.use_refs:
+        opt.exp += '.use_refs'
 
     opt.exp += '.seed{}'.format(opt.seed)
     opt.exp += size_tag

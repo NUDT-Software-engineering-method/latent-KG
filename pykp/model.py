@@ -107,7 +107,7 @@ class Seq2SeqModel(nn.Module):
         if not self.share_embeddings:
             self.decoder.embedding.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src, src_lens, trg, src_oov, max_num_oov, src_mask, topic_represent, num_trgs=None):
+    def forward(self, src, src_lens, trg, src_oov, max_num_oov, src_mask, topic_represent, num_trgs=None, **kwargs):
         """
         :param src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
         :param src_lens: a list containing the length of src sequences for each batch, with len=batch, with oov words replaced by unk idx

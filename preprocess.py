@@ -1,4 +1,5 @@
 import argparse
+import logging
 from collections import Counter
 import torch
 import pykp.io
@@ -36,7 +37,8 @@ def read_src_trg_files(opt, tag="train"):
         src_word_list = src_word_list[:opt.max_src_len]
         if tag != "test":
             trg_word_list = [trg_list[:opt.max_trg_len] for trg_list in trg_word_list]
-
+        if len(src_word_list) == 0:
+            continue
         # Append the lines to the data
         tokenized_src.append(src_word_list)
         tokenized_trg.append(trg_word_list)
@@ -149,6 +151,7 @@ def make_bow_dictionary(tokenized_src_trg_pairs, data_dir, bow_vocab):
 
 
 def main(opt):
+
     t0 = time.time()
     # Tokenize training data, return a list of tuple, (src_word_list, [trg_1_word_list, trg_2_word_list, ...])
     tokenized_train_pairs = read_src_trg_files(opt, "train")
@@ -167,6 +170,12 @@ def main(opt):
     torch.save([word2idx, idx2word, token_freq_counter, bow_dictionary],
                open(opt.res_data_dir + '/vocab.pt', 'wb'))
 
+    retriever = None
+    if opt.use_multidoc_graph:
+        from retrievers.retriever import Retriever
+        logging.info("Initialized retriever and loading references documents. ")
+        retriever = Retriever(opt, word2idx=word2idx)
+    opt.retriever = retriever
     # Build training set for one2one training mode
     # train_one2one is a list of dict, with fields src, trg, src_oov, oov_dict, oov_list, etc.
     train_one2one = pykp.io.build_dataset(
@@ -186,7 +195,7 @@ def main(opt):
     tokenized_test_pairs = read_src_trg_files(opt, "test")
     # Build test set for one2many training mode
     test_one2many = pykp.io.build_dataset(
-        tokenized_test_pairs, word2idx, bow_dictionary, opt, mode='one2many')
+        tokenized_test_pairs, word2idx, bow_dictionary, opt, mode='one2many', is_train=False)
 
     print("Dumping test to disk: %s\n" % (opt.res_data_dir + '/test.one2many.pt'))
     torch.save(test_one2many, open(opt.res_data_dir + '/test.one2many.pt', 'wb'))
@@ -205,6 +214,7 @@ if __name__ == "__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     config.vocab_opts(parser)
+    config.retriever_opts(parser)
     opt = parser.parse_args()
     opt.train_src = opt.data_dir + '/train_src.txt'
     opt.train_trg = opt.data_dir + '/train_trg.txt'
@@ -213,10 +223,18 @@ if __name__ == "__main__":
     opt.test_src = opt.data_dir + '/test_src.txt'
     opt.test_trg = opt.data_dir + '/test_trg.txt'
 
+    opt.ref_doc_path = opt.train_src
+    opt.ref_kp_path = opt.train_trg
+    opt.use_multidoc_graph = True
+    opt.use_multidoc_copy = True
+    opt.dense_retrieve = True
+    opt.n_ref_docs = 6
     if 'Twitter' in opt.data_dir:
         opt.vocab_size = 30000
+
     elif 'StackExchange' in opt.data_dir:
         opt.max_src_len = 150
+        opt.n_ref_docs = 3
 
     data_fn = opt.data_dir.rstrip('/').split('/')[-1] + '_s{}_t{}'.format(opt.max_src_len, opt.max_trg_len)
 

@@ -91,8 +91,11 @@ def process_opt(opt):
     if '.useContextNTM' in opt.model:
         opt.use_contextNTM = True
 
-    if '.encoder_attention' in opt.model:
+    if '.encoder_attn' in opt.model:
         opt.encoder_attention = True
+
+    if '.use_refs' in opt.model:
+        opt.use_refs = True
     # TODO: 需要修改
     # if ".use_topic" in opt.model:
     #     opt.use_topic_represent = True
