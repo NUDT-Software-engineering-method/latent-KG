@@ -20,16 +20,17 @@ class Attention(nn.Module):
     def score(self, memory_bank, decoder_state, topic_dist):
         batch_size, max_input_seq_len, memory_bank_size = memory_bank.size()
         decoder_size = decoder_state.size(1)
-        encoder_feature = self.memory_project(memory_bank)          # [batch_size, max_input_seq_len, decoder size]
+        encoder_feature = self.memory_project(memory_bank)  # [batch_size, max_input_seq_len, decoder size]
 
-        dec_feature = self.decode_project(decoder_state)            # [batch_size, decoder_size]
+        dec_feature = self.decode_project(decoder_state)  # [batch_size, decoder_size]
         dec_feature_expanded = dec_feature.unsqueeze(1).expand(batch_size, max_input_seq_len, decoder_size).contiguous()
 
         topic_feature = self.topic_project(topic_dist)
-        topic_feature_expanded = topic_feature.unsqueeze(1).expand(batch_size, max_input_seq_len, decoder_size).contiguous()
+        topic_feature_expanded = topic_feature.unsqueeze(1).expand(batch_size, max_input_seq_len,
+                                                                   decoder_size).contiguous()
 
-        att_features = encoder_feature + dec_feature_expanded + topic_feature_expanded # [batch_size, max_input_seq_len, decoder_size]
-        e = att_features.tanh()         # [batch_size, max_input_seq_len, decoder_size]
+        att_features = encoder_feature + dec_feature_expanded + topic_feature_expanded  # [batch_size, max_input_seq_len, decoder_size]
+        e = att_features.tanh()  # [batch_size, max_input_seq_len, decoder_size]
         scores = self.v(e).squeeze(-1)  # [batch_size, max_input_seq_len]
         return scores
 
