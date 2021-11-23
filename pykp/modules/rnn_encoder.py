@@ -81,13 +81,14 @@ class AttentionRNNEncoder(RNNEncoder):
                    pad_token=opt.word2idx[pykp.io.PAD_WORD],
                    dropout=opt.dropout)
 
-    def forward(self, src, src_lens, topic_embedding):
+    def forward(self, src, src_lens, topic_embedding=None):
         """
         :param src: [batch, src_seq_len]
         :param src_lens: a list containing the length of src sequences for each batch, with len=batch
         :param topic_embedding: a topic_embedding matrix [topic_num. topic_embedding_dim]
         :return:
         """
+        assert topic_embedding is not None
         src_embed = self.embedding(src)  # [batch, src_len, embed_size]
         packed_input_src = nn.utils.rnn.pack_padded_sequence(src_embed, src_lens, batch_first=True)
         memory_bank, encoder_final_state = self.rnn(packed_input_src)
@@ -114,6 +115,18 @@ class AttentionRNNEncoder(RNNEncoder):
         return memory_bank, encoder_last_layer_final_state, hidden_topic_state
 
 
+def sequence_mask(lengths, max_len=None):
+    """
+    Creates a boolean mask from sequence lengths.
+    length: (batchsize,)
+    """
+    max_len = max_len or lengths.max()
+    return (torch.arange(0, max_len, device=lengths.device)
+            .type_as(lengths)
+            .repeat(*lengths.size(), 1)
+            .lt(lengths.unsqueeze(-1)))
+
+
 class RefRNNEncoder(RNNEncoder):
     def __init__(self, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, dropout=0.0):
         super(RefRNNEncoder, self).__init__(vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token,
@@ -131,40 +144,37 @@ class RefRNNEncoder(RNNEncoder):
                    pad_token=opt.word2idx[pykp.io.PAD_WORD],
                    dropout=opt.dropout)
 
-    def forward(self, src, src_lens, ref_docs=None, ref_lens=None, ref_doc_lens=None):
+    def forward(self, src, src_lens, ref_docs=None, ref_lens=None, ref_doc_lens=None, begin_iterate_train_ntm=False, graph=None):
         cur_word_rep, cur_doc_rep = self._forward(self.rnn, src, src_lens)
-        packed_ref_docs_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_docs, ref_lens, batch_first=True, enforce_sorted=False)
-        packed_doc_ref_lens_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_doc_lens, ref_lens, batch_first=True, enforce_sorted=False)
+        if not begin_iterate_train_ntm:
+            packed_ref_docs_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_docs, ref_lens, batch_first=True, enforce_sorted=False)
+            packed_doc_ref_lens_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_doc_lens, ref_lens, batch_first=True, enforce_sorted=False)
 
-        packed_ref_word_reps, packed_ref_doc_reps = self._forward(self.rnn_ref, packed_ref_docs_by_ref_lens.data,
-                                                                  packed_doc_ref_lens_by_ref_lens.data.cpu())
-        ref_word_reps, _ = nn.utils.rnn.pad_packed_sequence(
-            nn.utils.rnn.PackedSequence(data=packed_ref_word_reps,
-                                        batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
-                                        sorted_indices=packed_ref_docs_by_ref_lens.sorted_indices,
-                                        unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
-            batch_first=True
-        )  # [batch, max_doc_num, max_doc_len, hidden_size]
-        ref_doc_reps, _ = nn.utils.rnn.pad_packed_sequence(
-            nn.utils.rnn.PackedSequence(data=packed_ref_doc_reps,
-                                        batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
-                                        sorted_indices=packed_ref_docs_by_ref_lens.sorted_indices,
-                                        unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
-            batch_first=True
-        )  # [batch, max_doc_num, hidden_size]
-        # TODO: 可加入其他Graph 或者注意力机制
-        all_doc_rep = torch.cat([cur_doc_rep.unsqueeze(1), ref_doc_reps], 1)
-        ref_doc_mask = self.sequence_mask(ref_lens)
-        ref_word_mask = self.sequence_mask(ref_doc_lens)
+            packed_ref_word_reps, packed_ref_doc_reps = self._forward(self.rnn_ref, packed_ref_docs_by_ref_lens.data,
+                                                                      packed_doc_ref_lens_by_ref_lens.data.cpu())
+            ref_word_reps, _ = nn.utils.rnn.pad_packed_sequence(
+                nn.utils.rnn.PackedSequence(data=packed_ref_word_reps,
+                                            batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
+                                            sorted_indices=packed_ref_docs_by_ref_lens.sorted_indices,
+                                            unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
+                batch_first=True
+            )  # [batch, max_doc_num, max_doc_len, hidden_size]
+            ref_doc_reps, _ = nn.utils.rnn.pad_packed_sequence(
+                nn.utils.rnn.PackedSequence(data=packed_ref_doc_reps,
+                                            batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
+                                            sorted_indices=packed_ref_docs_by_ref_lens.sorted_indices,
+                                            unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
+                batch_first=True
+            )  # [batch, max_doc_num, hidden_size]
+            all_doc_rep = torch.cat([cur_doc_rep.unsqueeze(1), ref_doc_reps], 1)
+            # TODO: 可加入其他Graph 或者注意力机制
+            assert graph is not None
+            all_doc_rep = self.gat(graph, ref_lens + 1, all_doc_rep)
+            cur_doc_rep = all_doc_rep[:, 0].contiguous()
+            ref_doc_reps = all_doc_rep[:, 1:].contiguous()
+
+            ref_doc_mask = sequence_mask(ref_lens)
+            ref_word_mask = sequence_mask(ref_doc_lens)
+        else:
+            ref_word_reps, ref_doc_reps, ref_doc_mask, ref_word_mask = None, None, None, None
         return (cur_word_rep, cur_doc_rep, ref_word_reps, ref_doc_reps), (ref_doc_mask, ref_word_mask)
-
-    def sequence_mask(self, lengths, max_len=None):
-        """
-        Creates a boolean mask from sequence lengths.
-        length: (batchsize,)
-        """
-        max_len = max_len or lengths.max()
-        return (torch.arange(0, max_len, device=lengths.device)
-                .type_as(lengths)
-                .repeat(*lengths.size(), 1)
-                .lt(lengths.unsqueeze(-1)))

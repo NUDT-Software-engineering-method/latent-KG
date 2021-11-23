@@ -215,7 +215,7 @@ class RNNDecoderTW(RNNDecoder):
             topic_attn_in=opt.topic_attn_in, topic_copy=opt.topic_copy, topic_dec=opt.topic_dec, topic_num=opt.topic_num
         )
 
-    def forward(self, y, topic_represent, h, memory_bank, hidden_topic_bank, src_mask, max_num_oovs, src_oov, coverage):
+    def forward(self, y, topic_represent, h, memory_bank, hidden_topic_bank, src_mask, max_num_oovs, src_oov, coverage=None):
         """
         topic_embedding:[topic_num, topic_num_emb]
         """
@@ -352,7 +352,7 @@ class RefRNNDecoder(RNNDecoder):
         self.ref_attention_layer = HierAttention(hidden_size, hidden_size, topic_num)
 
     def forward(self, y, topic_represent, h, memory_bank, src_mask, max_num_oovs, src_oov, coverage, ref_word_reps,
-                ref_doc_reps, ref_word_mask, ref_doc_mask, ref_oovs):
+                ref_doc_reps, ref_word_mask, ref_doc_mask, ref_oovs=None):
         """
         :param y: [batch_size] 表示batch_size个样本在t时间步的单词序号
         :param h: [num_layers, batch_size, decoder_size]
@@ -363,6 +363,7 @@ class RefRNNDecoder(RNNDecoder):
         :param coverage: [batch_size, max_src_seq_len]
         :return:
         """
+        assert  ref_oovs is not None
         batch_size, max_src_seq_len = list(src_oov.size())
         assert y.size() == torch.Size([batch_size])
         if self.use_topic_represent:

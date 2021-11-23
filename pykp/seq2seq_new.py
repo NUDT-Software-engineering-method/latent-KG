@@ -64,22 +64,18 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                                                                                      self.topic_model.get_topic_embedding())
         elif self.use_refs and ref_input is not None:
             encoder_output, encoder_mask = self.encoder(src, src_lens, ref_docs,
-                                                        ref_lens, ref_doc_lens)
+                                                        ref_lens, ref_doc_lens, begin_iterate_train_ntm=begin_iterate_train_ntm)
             memory_bank, encoder_final_state, ref_word_reps, ref_doc_reps = encoder_output
             ref_doc_mask, ref_word_mask = encoder_mask
-            ref_doc_mask = ref_doc_mask.to(src.device)
-            ref_word_mask = ref_word_mask.to(src.device)
+            if ref_word_mask is not None and ref_word_mask is not None:
+                ref_doc_mask = ref_doc_mask.to(src.device)
+                ref_word_mask = ref_word_mask.to(src.device)
         else:
             memory_bank, encoder_final_state = self.encoder(src, src_lens)
             hidden_topic_state_bank = None
         assert memory_bank.size() == torch.Size([batch_size, max_src_len, self.num_directions * self.encoder_size])
         assert encoder_final_state.size() == torch.Size([batch_size, self.num_directions * self.encoder_size])
 
-        # # 计算注意力机制 并作为NTM的输入
-        # M = self.tanh(memory_bank)                                      # [batch_size, seq, hidden_size]
-        # alpha = F.softmax(torch.matmul(M, self.W), dim=1).unsqueeze(-1)     # [batch_size, seq, 1]
-        # attention_out = memory_bank * alpha                             # [batch_size, seq, hidden_size]
-        # attention_out = torch.sum(attention_out, dim=1)                     # [batch_size, hidden_size]
         # Topic Model forward
         if self.use_contextNTM:
             topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance = self.topic_model(
