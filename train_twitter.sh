@@ -13,10 +13,10 @@
 
 
 # train my own model
-#CUDA_VISIBLE_DEVICES=0 python train_mySeq2Seq.py -data_tag Twitter_s100_t10 -copy_attention -use_topic_represent -add_two_loss -joint_train -topic_dec -topic_attn -topic_attn_in -topic_copy -topic_type g -epochs 220 -early_stop_tolerance 4 -joint_train_strategy p_1_iterate -learning_rate_decay 0.6 -batch_size 128 -learning_rate 0.002 -use_contextNTM -topic_num 50 -use_refs
+CUDA_VISIBLE_DEVICES=0 python train_mySeq2Seq.py -data_tag Twitter_s100_t10 -copy_attention -use_topic_represent -add_two_loss -joint_train -topic_dec -topic_attn -topic_attn_in -topic_copy -topic_type g -epochs 220 -early_stop_tolerance 4 -joint_train_strategy p_1_iterate -learning_rate_decay 0.6 -batch_size 128 -learning_rate 0.002 -use_contextNTM -topic_num 50 -use_refs
 
 # python predict
-CUDA_VISIBLE_DEVICES=0 python predict_by_newSeq2Seq.py -model model/Twitter_s100_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.topic_attn_in.ntm_warm_up_0.copy.useContextNTM.seed9527.emb150.vs30000.dec300.20211119-225759/e103.val_loss=1.501.model-2h-22m -batch_size 32 -use_refs
+#CUDA_VISIBLE_DEVICES=0 python predict_by_newSeq2Seq.py -model model/Twitter_s100_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.topic_attn_in.ntm_warm_up_0.copy.useContextNTM.seed9527.emb150.vs30000.dec300.20211119-225759/e103.val_loss=1.501.model-2h-22m -batch_size 32
 
 #CUDA_VISIBLE_DEVICES=0 python predict.py -batch_size 125 -model model/Twitter_s100_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.topic_attn_in.topic_words.ntm_warm_up_0.copy.useContextNTM.encoder_attention.seed9527.emb150.vs30000.dec300.20211112-093453/e103.val_loss=1.503.model-0h-19m
 

@@ -228,7 +228,9 @@ if __name__ == "__main__":
     opt.use_multidoc_graph = True
     opt.use_multidoc_copy = True
     opt.dense_retrieve = True
-    opt.n_ref_docs = 6
+    opt.n_ref_docs = 5
+    if 'Weibo' in opt.data_dir:
+        opt.dense_model_name = 'paraphrase-multilingual-mpnet-base-v2'
     if 'Twitter' in opt.data_dir:
         opt.vocab_size = 30000
 

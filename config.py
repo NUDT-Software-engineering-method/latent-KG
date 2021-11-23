@@ -572,3 +572,5 @@ def retriever_opts(parser):
                         help='random_search documents')
     parser.add_argument('--dense_retrieve', '-dense_retrieve', action="store_true",
                         help='use dense_retrieve')
+    parser.add_argument('--dense_model_name', '-dense_model_name', default="allenai-specter",
+                        choices=['allenai-specter', 'paraphrase-multilingual-mpnet-base-v2'])

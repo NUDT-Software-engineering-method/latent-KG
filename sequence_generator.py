@@ -302,6 +302,7 @@ class SequenceGenerator(object):
         ref_word_mask = ref_word_mask.repeat(beam_size, 1, 1)       # # [batch * beam_size, ref_nums, max_src_len]
         # exclusion_list = ["<t>", "</t>", "."]
 
+
         exclusion_tokens = set([word2idx[t] for t in self.ignore_when_blocking])
 
         beam_list = [
@@ -344,7 +345,7 @@ class SequenceGenerator(object):
 
             # run one step of decoding
             # [flattened_batch, vocab_size], [dec_layers, flattened_batch, decoder_size], [flattened_batch, memory_bank_size], [flattened_batch, src_len], [flattened_batch, src_len]
-            decoder_dist, h_t_next, context, attn_dist, p_gen, coverage = self.model.decoder(decoder_input,
+            decoder_dist, decoder_state, context, attn_dist, p_gen, coverage = self.model.decoder(decoder_input,
                                                                                              topic_represent,
                                                                                              decoder_state,
                                                                                              memory_bank, src_mask,

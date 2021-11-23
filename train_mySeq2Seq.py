@@ -3,26 +3,15 @@
 # @Author  : WuDiDaBinGe
 # @FileName: train_mySeq2Seq.py
 # @Software: PyCharm
-import torch
 import argparse
-import logging
-import json
-import time
-import numpy as np
-import random
-from itertools import chain
 from torch.optim import Adam
 
 import config
-from evaluate import evaluate_loss
-from train_mixture import train_ntm_one_epoch, test_ntm_one_epoch, fix_model, unfix_model, loss_function, EPS, \
+from train_mixture import  loss_function, EPS, \
      fix_model_seq2seq_decoder, unfix_model_seq2seq_decoder
-from pykp.io import SEP_WORD, EOS_WORD
-from pykp.model import Seq2SeqModel, NTM
 from pykp.seq2seq_new import TopicSeq2SeqModel
 from train import process_opt
 from utils.data_loader import load_data_and_vocab
-from utils.statistics import LossStatistics
 from pykp.context_topic_model.loss import topic_modeling_loss
 import torch.nn as nn
 from torch.nn import functional as F
@@ -36,9 +25,11 @@ import logging
 import torch
 import sys
 import os
-
-# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 from tensorboardX import SummaryWriter
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
 
 
 def init_optimizers(model, opt):

@@ -40,8 +40,8 @@ class SBERTDocRanker():
         # model_name = 'bert-base-nli-mean-tokens'
         # 加载roberta-large-nli-stsb-mean-tokens。中文可以使用paraphrase-multilingual-mpnet-base-v2（好而慢）或者paraphrase-multilingual-MiniLM-L12-v2（快但是差一些）
         # model_name = "allenai-specter"
-        model_name = "paraphrase-multilingual-mpnet-base-v2"
-        self.model = SentenceTransformer(model_name)
+        model_name = opt.dense_model_name
+        self.model = SentenceTransformer('/home/ubuntu/TAKG/setence_trans_model/sentence_transformers/'+model_name)
         embed_cache_path = opt.data_dir + '/embeddings-{}.pkl'.format(model_name.replace('/', '_'))
         # embed_cache_path = 'data/kp20k_sorted50/Full50_Dense_RefKP_RefDoc_RefGraph_CopyRef/kp20k-embeddings-{}.pkl'.format(model_name.replace('/', '_'))
         self.index, self.tfidf_vectorizer = self.build_index(embed_cache_path)
