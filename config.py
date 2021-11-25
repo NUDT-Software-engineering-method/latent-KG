@@ -181,6 +181,22 @@ def model_opts(parser):
     parser.add_argument('-use_contextNTM', default=False, action='store_true',
                         help="Whether use contextNTM.")
 
+    # Graph Options
+    parser.add_argument('--gat_n_head', type=int, default=5,
+                        help='multihead attention number')
+    parser.add_argument('--gat_atten_drop', type=float, default=0.3,
+                        help='attention dropout prob')
+    parser.add_argument('--gat_edge_embed_size', type=int, default=50,
+                        help='tf-idf embedding size')
+    parser.add_argument('--gat_ffn_hidden_size', type=int, default=200,
+                        help='PositionwiseFeedForward inner hidden size')
+    parser.add_argument('--gat_feat_drop', type=float, default=0.3,
+                        help='dropout for inputs in graph module')
+    parser.add_argument('--gat_ffn_drop', type=float, default=0.3,
+                        help='PositionwiseFeedForward dropout prob')
+    parser.add_argument('--gat_n_iter', type=int, default=2,
+                        help='iteration hop [default: 1]')
+
 
 def vocab_opts(parser):
     parser.add_argument('-data_dir', help='The source file of the data')
@@ -560,7 +576,7 @@ def retriever_opts(parser):
                         help='Path to built reference document hash index')
     parser.add_argument('--n_ref_docs', '-n_ref_docs', type=int, default=3,
                         help='retriever n references for every doc')
-    parser.add_argument('--n_topic_words', '-n_topic_words', type=int, default=1,
+    parser.add_argument('--n_topic_words', '-n_topic_words', type=int, default=3,
                         help='construct graph use n topic words for every doc')
     parser.add_argument('--num_workers', '-num_workers', type=int, default=None,
                         help='Number of CPU processes (for tokenizing, etc)')

@@ -83,7 +83,7 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
             # for one2one setting
             ref_input = (ref_docs, ref_lens, ref_doc_lens, ref_oovs)
             seq2seq_output, topic_model_output = topic_seq2seqModel(src, src_lens, trg, src_oov, max_num_oov, src_mask,
-                                                                     src_bow_norm, ref_input)
+                                                                     src_bow_norm, ref_input, graph=graph)
             decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
             topic_represent, topic_represent_drop, recon_batch, mu, logvar = topic_model_output
 
@@ -141,7 +141,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
     src_bow_norm = F.normalize(src_bow)
     ref_input = (ref_docs, ref_lens, ref_doc_lens, ref_oovs)
     seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, trg, src_oov, max_num_oov, src_mask,
-                                                             src_bow_norm, ref_input, begin_iterate_train_ntm=begin_iterate_train_ntm)
+                                                             src_bow_norm, ref_input, begin_iterate_train_ntm=begin_iterate_train_ntm, graph=graph)
     decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
 
     if opt.use_contextNTM:

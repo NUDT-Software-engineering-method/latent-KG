@@ -43,7 +43,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         self.tanh = nn.Tanh()
 
     def forward(self, src, src_lens, trg, src_oov, max_num_oov, src_mask, src_bow, ref_input=None,
-                begin_iterate_train_ntm=False, num_trgs=None):
+                begin_iterate_train_ntm=False, num_trgs=None, graph=None):
         """
         :param src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
         :param src_lens: a list containing the length of src sequences for each batch, with len=batch, with oov words replaced by unk idx
@@ -64,7 +64,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                                                                                      self.topic_model.get_topic_embedding())
         elif self.use_refs and ref_input is not None:
             encoder_output, encoder_mask = self.encoder(src, src_lens, ref_docs,
-                                                        ref_lens, ref_doc_lens, begin_iterate_train_ntm=begin_iterate_train_ntm)
+                                                        ref_lens, ref_doc_lens, begin_iterate_train_ntm=begin_iterate_train_ntm, graph=graph)
             memory_bank, encoder_final_state, ref_word_reps, ref_doc_reps = encoder_output
             ref_doc_mask, ref_word_mask = encoder_mask
             if ref_word_mask is not None and ref_word_mask is not None:

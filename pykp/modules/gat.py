@@ -51,7 +51,7 @@ class MultiHeadGATLayer(nn.Module):
 
     def edge_attention(self, edges):
         dfeat = self.feat_fc(edges.data["embed"]).reshape(-1, self.n_head,
-                                                               self.out_dim)  # [edge_num, n_head, out_dim]
+                                                          self.out_dim)  # [edge_num, n_head, out_dim]
         z2 = torch.cat([edges.src['z'], edges.dst['z'], dfeat], dim=-1)  # [edge_num, n_head, 3 * out_dim]
         z = F.leaky_relu((self.attn_fc * z2).sum(dim=-1, keepdim=True))  # [edge_num, n_head, 1]
         return {'e': z}
@@ -67,7 +67,8 @@ class MultiHeadGATLayer(nn.Module):
     def forward(self, g, src_h, tgt_h):
         snode_id = g.filter_nodes(lambda nodes: nodes.data["unit"] == self.src_unit)
         tnode_id = g.filter_nodes(lambda nodes: nodes.data["unit"] == self.tgt_unit)
-        stedge_id = g.filter_edges(lambda edges: (edges.src["unit"] == self.src_unit) & (edges.dst["unit"] == self.tgt_unit))
+        stedge_id = g.filter_edges(
+            lambda edges: (edges.src["unit"] == self.src_unit) & (edges.dst["unit"] == self.tgt_unit))
 
         src_h = self.feat_drop(src_h)
         z = self.fc(src_h).reshape(-1, self.n_head, self.out_dim)  # (node_num, n_head, out_dim)
@@ -84,7 +85,7 @@ class MultiHeadGATLayer(nn.Module):
 
 class GAT(nn.Module):
     def __init__(self, embeddings, edge_embed_size, input_size, n_head, ffn_hidden_size, feat_drop, attn_drop, ffn_drop,
-                 n_iter):
+                 n_iter) -> object:
         super(GAT, self).__init__()
         self.word_embed = embeddings
         self.w2d_edge_embed = nn.Embedding(10, edge_embed_size)  # box=10
@@ -96,45 +97,46 @@ class GAT(nn.Module):
 
         embed_size = self.word_embed.embedding_dim
         self.word2doc = MultiHeadGATLayer(src_unit=0,
-                                            tgt_unit=1,
-                                            in_dim=embed_size,
-                                            out_dim=input_size//n_head,
-                                            n_head=n_head,
-                                            edge_embed_size=edge_embed_size,
-                                            feat_drop=feat_drop,
-                                            attn_drop=attn_drop,
-                                            ffn_hidden_size=ffn_hidden_size,
-                                            ffn_drop=ffn_drop
-                                            )
+                                          tgt_unit=1,
+                                          in_dim=embed_size,
+                                          out_dim=input_size // n_head,
+                                          n_head=n_head,
+                                          edge_embed_size=edge_embed_size,
+                                          feat_drop=feat_drop,
+                                          attn_drop=attn_drop,
+                                          ffn_hidden_size=ffn_hidden_size,
+                                          ffn_drop=ffn_drop
+                                          )
 
         self.doc2word = MultiHeadGATLayer(src_unit=1,
-                                            tgt_unit=0,
-                                            in_dim=input_size,
-                                            out_dim=embed_size//n_head,
-                                            n_head=n_head,
-                                            edge_embed_size=edge_embed_size,
-                                            feat_drop=feat_drop,
-                                            attn_drop=attn_drop,
-                                            ffn_hidden_size=ffn_hidden_size,
-                                            ffn_drop=ffn_drop
-                                            )
+                                          tgt_unit=0,
+                                          in_dim=input_size,
+                                          out_dim=embed_size // n_head,
+                                          n_head=n_head,
+                                          edge_embed_size=edge_embed_size,
+                                          feat_drop=feat_drop,
+                                          attn_drop=attn_drop,
+                                          ffn_hidden_size=ffn_hidden_size,
+                                          ffn_drop=ffn_drop
+                                          )
         self.doc2doc = MultiHeadGATLayer(src_unit=1,
-                                            tgt_unit=1,
-                                            in_dim=input_size,
-                                            out_dim=input_size // n_head,
-                                            n_head=n_head,
-                                            edge_embed_size=edge_embed_size,
-                                            feat_drop=feat_drop,
-                                            attn_drop=attn_drop,
-                                            ffn_hidden_size=ffn_hidden_size,
-                                            ffn_drop=ffn_drop
-                                            )
+                                         tgt_unit=1,
+                                         in_dim=input_size,
+                                         out_dim=input_size // n_head,
+                                         n_head=n_head,
+                                         edge_embed_size=edge_embed_size,
+                                         feat_drop=feat_drop,
+                                         attn_drop=attn_drop,
+                                         ffn_hidden_size=ffn_hidden_size,
+                                         ffn_drop=ffn_drop
+                                         )
+
     @classmethod
     def from_opt(cls, opt, embeddings):
         """Alternate constructor."""
         return cls(embeddings=embeddings,
                    edge_embed_size=opt.gat_edge_embed_size,
-                   input_size=opt.d_model,
+                   input_size=opt.encoder_size * 2,
                    n_head=opt.gat_n_head,
                    ffn_hidden_size=opt.gat_ffn_hidden_size,
                    feat_drop=opt.gat_feat_drop,
@@ -145,7 +147,6 @@ class GAT(nn.Module):
 
     def init_graph(self, g, doc_rep):
         g = g.to(doc_rep.device)
-
         # w node
         word_nid = g.filter_nodes(lambda nodes: nodes.data["dtype"] == 0)
         word_id = g.nodes[word_nid].data["id"]
@@ -174,7 +175,6 @@ class GAT(nn.Module):
 
     def forward(self, graph, batch_docs, doc_rep):
         '''
-
         :param graph: [batch_size] * DGLGraph
         :param sent_rep: (batch_size, max(n_documents), max(sentences_per_document), input_size)
         :param doc_rep: (batch_size, max(n_documents), input_size)

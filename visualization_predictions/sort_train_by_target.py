@@ -75,7 +75,7 @@ def output_sorted_traget(train_src, train_trg, out_path):
 
 
 if __name__ == '__main__':
-    dataset_name = 'Weibo'
+    dataset_name = 'Twitter'
     train_src = '../data/' + dataset_name + '/train_src.txt'
     train_trg = '../data/' + dataset_name + '/train_trg.txt'
     out_path = '../data/' + dataset_name + '/sorted_trg.txt'

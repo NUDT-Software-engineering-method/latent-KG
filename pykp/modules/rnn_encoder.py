@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import pykp
 from pykp.masked_softmax import MaskedSoftmax
 from pykp.modules.attention_modules import ContextTopicAttention, TopicEmbeddingAttention
+from pykp.modules.gat import GAT
 
 
 class RNNEncoder(nn.Module):
@@ -42,7 +43,8 @@ class RNNEncoder(nn.Module):
             :return:
         """
         src_embed = self.embedding(src)  # [batch, src_len, embed_size]
-        packed_input_src = nn.utils.rnn.pack_padded_sequence(src_embed, src_lens, batch_first=True, enforce_sorted=False)
+        packed_input_src = nn.utils.rnn.pack_padded_sequence(src_embed, src_lens, batch_first=True,
+                                                             enforce_sorted=False)
         memory_bank, encoder_final_state = rnn(packed_input_src)
         # ([batch, seq_len, num_directions*hidden_size], [num_layer * num_directions, batch, hidden_size])
         memory_bank, _ = nn.utils.rnn.pad_packed_sequence(memory_bank, batch_first=True)  # unpack (back to padded)
@@ -128,11 +130,12 @@ def sequence_mask(lengths, max_len=None):
 
 
 class RefRNNEncoder(RNNEncoder):
-    def __init__(self, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, dropout=0.0):
+    def __init__(self, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, opt, dropout=0.0):
         super(RefRNNEncoder, self).__init__(vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token,
                                             dropout=dropout)
         self.rnn_ref = nn.GRU(input_size=embed_size, hidden_size=hidden_size, num_layers=num_layers + 1,
                               bidirectional=bidirectional, batch_first=True, dropout=dropout)
+        self.gat = GAT.from_opt(opt, self.embedding)
 
     @classmethod
     def from_opt(cls, opt):
@@ -142,13 +145,17 @@ class RefRNNEncoder(RNNEncoder):
                    num_layers=opt.enc_layers,
                    bidirectional=opt.bidirectional,
                    pad_token=opt.word2idx[pykp.io.PAD_WORD],
+                   opt=opt,
                    dropout=opt.dropout)
 
-    def forward(self, src, src_lens, ref_docs=None, ref_lens=None, ref_doc_lens=None, begin_iterate_train_ntm=False, graph=None):
+    def forward(self, src, src_lens, ref_docs=None, ref_lens=None, ref_doc_lens=None, begin_iterate_train_ntm=False,
+                graph=None):
         cur_word_rep, cur_doc_rep = self._forward(self.rnn, src, src_lens)
         if not begin_iterate_train_ntm:
-            packed_ref_docs_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_docs, ref_lens, batch_first=True, enforce_sorted=False)
-            packed_doc_ref_lens_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_doc_lens, ref_lens, batch_first=True, enforce_sorted=False)
+            packed_ref_docs_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_docs, ref_lens, batch_first=True,
+                                                                            enforce_sorted=False)
+            packed_doc_ref_lens_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_doc_lens, ref_lens,
+                                                                                batch_first=True, enforce_sorted=False)
 
             packed_ref_word_reps, packed_ref_doc_reps = self._forward(self.rnn_ref, packed_ref_docs_by_ref_lens.data,
                                                                       packed_doc_ref_lens_by_ref_lens.data.cpu())
@@ -166,12 +173,13 @@ class RefRNNEncoder(RNNEncoder):
                                             unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
                 batch_first=True
             )  # [batch, max_doc_num, hidden_size]
-            all_doc_rep = torch.cat([cur_doc_rep.unsqueeze(1), ref_doc_reps], 1)
-            # TODO: 可加入其他Graph 或者注意力机制
-            assert graph is not None
-            all_doc_rep = self.gat(graph, ref_lens + 1, all_doc_rep)
-            cur_doc_rep = all_doc_rep[:, 0].contiguous()
-            ref_doc_reps = all_doc_rep[:, 1:].contiguous()
+
+            if graph is not None:
+                assert graph is not None
+                all_doc_rep = torch.cat([cur_doc_rep.unsqueeze(1), ref_doc_reps], 1)
+                all_doc_rep = self.gat(graph, ref_lens + 1, all_doc_rep)
+                cur_doc_rep = all_doc_rep[:, 0].contiguous()
+                ref_doc_reps = all_doc_rep[:, 1:].contiguous()
 
             ref_doc_mask = sequence_mask(ref_lens)
             ref_word_mask = sequence_mask(ref_doc_lens)

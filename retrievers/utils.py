@@ -1,4 +1,5 @@
 import dgl
+import dgl.nn.pytorch as dglnn
 import torch
 import pykp.io as io
 
@@ -87,7 +88,6 @@ def get_node_edge(docs, w2d_score, d2d_score):
             # d_d_feat["score"].append(max(0, min(round(math.log(d2d_score[di-1])), 9)))
             d_d_feat["score"].append(d2d_score[di - 1])
             d_d_feat["dtype"].append(1)
-
 
     utils = {"w_id": w_id,
              "d_idx": d_idx,
