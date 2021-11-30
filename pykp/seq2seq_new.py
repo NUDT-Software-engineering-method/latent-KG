@@ -55,7 +55,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         :return:
         """
         batch_size, max_src_len = list(src.size())
-        ref_docs, ref_lens, ref_doc_lens, ref_oovs = None, None, None, None
+        ref_docs, ref_lens, ref_doc_lens, ref_oovs, encoder_final_state_gat = None, None, None, None, None
         if ref_input is not None:
             ref_docs, ref_lens, ref_doc_lens, ref_oovs = ref_input
         # Encoding
@@ -65,7 +65,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         elif self.use_refs and ref_input is not None:
             encoder_output, encoder_mask = self.encoder(src, src_lens, ref_docs,
                                                         ref_lens, ref_doc_lens, begin_iterate_train_ntm=begin_iterate_train_ntm, graph=graph)
-            memory_bank, encoder_final_state, ref_word_reps, ref_doc_reps = encoder_output
+            memory_bank, encoder_final_state, encoder_final_state_gat, ref_word_reps, ref_doc_reps = encoder_output
             ref_doc_mask, ref_word_mask = encoder_mask
             if ref_word_mask is not None and ref_word_mask is not None:
                 ref_doc_mask = ref_doc_mask.to(src.device)
@@ -92,7 +92,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
             topic_latent = topic_represent_g
         # 只训练主题模型 无需进行解码
         if not begin_iterate_train_ntm:
-            h_t_init = self.init_decoder_state(encoder_final_state)  # [dec_layers, batch_size, decoder_size]
+            h_t_init = self.init_decoder_state(encoder_final_state_gat)  # [dec_layers, batch_size, decoder_size]
             max_target_length = trg.size(1)
 
             decoder_dist_all = []

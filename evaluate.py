@@ -156,7 +156,7 @@ def evaluate_beam_search(generator, one2many_data_loader, opt, delimiter_word='<
                                                            opt.word2idx, opt.max_eos_per_output_seq)
             else:
                 beam_search_result = generator.beam_search_by_refs(src, src_lens, src_oov, src_mask, src_bow, oov_lists,
-                                                                   opt.word2idx, ref_inputs, opt.max_eos_per_output_seq)
+                                                                   opt.word2idx, ref_inputs, opt.max_eos_per_output_seq, graph=graph)
             pred_list = preprocess_beam_search_result(beam_search_result, opt.idx2word, opt.vocab_size, oov_lists,
                                                       opt.word2idx[pykp.io.EOS_WORD], opt.word2idx[pykp.io.UNK_WORD],
                                                       opt.replace_unk, src_str_list)

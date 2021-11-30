@@ -151,6 +151,7 @@ class RefRNNEncoder(RNNEncoder):
     def forward(self, src, src_lens, ref_docs=None, ref_lens=None, ref_doc_lens=None, begin_iterate_train_ntm=False,
                 graph=None):
         cur_word_rep, cur_doc_rep = self._forward(self.rnn, src, src_lens)
+        cur_doc_rep_gat = None
         if not begin_iterate_train_ntm:
             packed_ref_docs_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_docs, ref_lens, batch_first=True,
                                                                             enforce_sorted=False)
@@ -178,11 +179,11 @@ class RefRNNEncoder(RNNEncoder):
                 assert graph is not None
                 all_doc_rep = torch.cat([cur_doc_rep.unsqueeze(1), ref_doc_reps], 1)
                 all_doc_rep = self.gat(graph, ref_lens + 1, all_doc_rep)
-                cur_doc_rep = all_doc_rep[:, 0].contiguous()
+                cur_doc_rep_gat = all_doc_rep[:, 0].contiguous()
                 ref_doc_reps = all_doc_rep[:, 1:].contiguous()
 
             ref_doc_mask = sequence_mask(ref_lens)
             ref_word_mask = sequence_mask(ref_doc_lens)
         else:
             ref_word_reps, ref_doc_reps, ref_doc_mask, ref_word_mask = None, None, None, None
-        return (cur_word_rep, cur_doc_rep, ref_word_reps, ref_doc_reps), (ref_doc_mask, ref_word_mask)
+        return (cur_word_rep, cur_doc_rep, cur_doc_rep_gat, ref_word_reps, ref_doc_reps), (ref_doc_mask, ref_word_mask)
