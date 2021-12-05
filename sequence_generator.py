@@ -229,7 +229,7 @@ class SequenceGenerator(object):
         return result_dict
 
     def beam_search_by_refs(self, src, src_lens, src_oov, src_mask, src_bow, oov_lists, word2idx, ref_input,
-                            max_eos_per_output_seq=1):
+                            max_eos_per_output_seq=1, graph=None):
         """
         :param src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
         :param src_lens: a list containing the length of src sequences for each batch, with len=batch
@@ -245,8 +245,9 @@ class SequenceGenerator(object):
         ref_docs, ref_lens, ref_doc_lens, ref_oovs = ref_input
         # Encoding
         encoder_output, encoder_mask = self.model.encoder(src, src_lens, ref_docs,
-                                                          ref_lens, ref_doc_lens)
-        memory_bank, encoder_final_state, ref_word_reps, ref_doc_reps = encoder_output
+                                                          ref_lens, ref_doc_lens,graph=graph)
+        #TODO: 这里记得推理时候需要修改 主题的模型的输入
+        memory_bank, encoder_final_state, encoder_final_gat, ref_word_reps, ref_doc_reps = encoder_output
         ref_doc_mask, ref_word_mask = encoder_mask
         ref_doc_mask = ref_doc_mask.to(src.device)
         ref_word_mask = ref_word_mask.to(src.device)
@@ -267,8 +268,7 @@ class SequenceGenerator(object):
 
         max_num_oov = max([len(oov) for oov in oov_lists])  # max number of oov for each batch
         # Init decoder state
-        decoder_init_state = self.model.init_decoder_state(
-            encoder_final_state)  # [dec_layers, batch_size, decoder_size]
+        decoder_init_state = self.model.init_decoder_state(encoder_final_gat)  # [dec_layers, batch_size, decoder_size]
 
         # init initial_input to be BOS token
         # decoder_init_input = src.new_ones((batch_size * beam_size, 1)) * self.bos_idx  # [batch_size*beam_size, 1]

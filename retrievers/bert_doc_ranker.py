@@ -42,6 +42,7 @@ class SBERTDocRanker():
         # model_name = "allenai-specter"
         model_name = opt.dense_model_name
         self.model = SentenceTransformer(model_name)
+        # self.model = SentenceTransformer('/home/ubuntu/TAKG/setence_trans_model/sentence_transformers/'+model_name)
         embed_cache_path = opt.data_dir + '/embeddings-{}.pkl'.format(model_name.replace('/', '_'))
         # embed_cache_path = 'data/kp20k_sorted50/Full50_Dense_RefKP_RefDoc_RefGraph_CopyRef/kp20k-embeddings-{}.pkl'.format(model_name.replace('/', '_'))
         self.index, self.tfidf_vectorizer = self.build_index(embed_cache_path)
@@ -125,7 +126,7 @@ class SBERTDocRanker():
         # normalize score to integer between [0, 9]
         distances = np.round(distances * 9)
         distances[distances < 0] = 0
-        return corpus_ids, distances
+        return corpus_ids, distances, query_embedding.tolist()
 
     def batch_words_tfidf(self, queries, k=3, word2idx=None):
         batch_tfidf = self.tfidf_vectorizer.transform(queries)
@@ -139,6 +140,7 @@ class SBERTDocRanker():
                         if id != -1 and self.tfidf_vectorizer.id2word[id] not in stoplist}
                        for topic_words_id, words_tfidf in zip(batch_sorted_idx, batch_tfidf)]
         return words2tfidf
+
 
 def _top_k(d, r, k):
     tmp = sorted(zip(d, r), reverse=True)[:k]

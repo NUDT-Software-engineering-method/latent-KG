@@ -5,8 +5,6 @@ export CUDA_VISIBLE_DEVICES=1
 
 
 seeds=(
-10
-100
 5643
 8000
 )

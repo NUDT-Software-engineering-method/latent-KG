@@ -53,13 +53,13 @@ class Retriever():
                 batch_ref_doc_scores = [1] * self.opt.n_ref_docs  # tmp value
             else:
                 if is_train:  # ignore the same doc
-                    batch_ref_docids, batch_ref_doc_scores = self.ranker.batch_closest_docs(source,
-                                                                                            k=self.opt.n_ref_docs + 1)
+                    batch_ref_docids, batch_ref_doc_scores, query_embedding = self.ranker.batch_closest_docs(source,
+                                                                                                             k=self.opt.n_ref_docs + 1)
                     batch_ref_doc_scores = batch_ref_doc_scores[:, 1:]
                     batch_ref_docids = batch_ref_docids[:, 1:]
                 else:
-                    batch_ref_docids, batch_ref_doc_scores = self.ranker.batch_closest_docs(source,
-                                                                                            k=self.opt.n_ref_docs)
+                    batch_ref_docids, batch_ref_doc_scores, query_embedding = self.ranker.batch_closest_docs(source,
+                                                                                                             k=self.opt.n_ref_docs)
 
                 batch_ref_doc_texts = [[self.ref_docs[ref_docid] for ref_docid in ref_docids] for ref_docids in
                                        batch_ref_docids]
@@ -68,6 +68,7 @@ class Retriever():
         else:
             batch_ref_doc_texts = None
             batch_ref_doc_texts_tokenized = None
+            query_embedding = None
         # TODO:have bug
         if self.opt.n_topic_words > 0:
             batch_cur_tfidfs = self.ranker.batch_words_tfidf(source, self.opt.n_topic_words, word2idx)
@@ -86,4 +87,4 @@ class Retriever():
         else:
             graph_utils = None
 
-        return batch_ref_doc_texts_tokenized, graph_utils
+        return batch_ref_doc_texts_tokenized, graph_utils, query_embedding
