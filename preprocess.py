@@ -77,7 +77,7 @@ def build_vocab(tokenized_src_trg_pairs):
         # '<pad>': 0, '<bos>': 1, '<eos>': 2, '<unk>': 3
         word2idx[word] = idx
         idx2word[idx] = word
-
+    # 根据词频排序
     sorted_word2idx = sorted(token_freq_counter.items(), key=lambda x: x[1], reverse=True)
 
     sorted_words = [x[0] for x in sorted_word2idx]

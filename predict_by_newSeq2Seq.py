@@ -15,7 +15,7 @@ from utils.time_log import time_since
 from evaluate import evaluate_beam_search
 from utils.data_loader import load_data_and_vocab
 import pykp.io
-from pykp.model import Seq2SeqModel, NTM
+from pykp.model import Seq2SeqModel
 from pykp.seq2seq_new import TopicSeq2SeqModel
 import os
 from predict import process_opt

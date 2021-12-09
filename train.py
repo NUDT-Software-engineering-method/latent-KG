@@ -11,8 +11,8 @@ from torch.optim import Adam
 import config
 import train_mixture
 from pykp.io import SEP_WORD, EOS_WORD
-from pykp.model import Seq2SeqModel, NTM
-
+from pykp.model import Seq2SeqModel
+from pykp.modules.ntm import NTM
 from utils.time_log import time_since
 from utils.data_loader import load_data_and_vocab
 
@@ -122,12 +122,17 @@ def process_opt(opt):
     if opt.use_contextNTM:
         opt.exp += '.useContextNTM'
 
+    if opt.use_fusion_embed:
+        opt.exp += ".fusion_emb"
+
     if opt.encoder_attention:
         opt.exp += '.encoder_attn'
 
     if opt.use_refs:
         opt.exp += '.use_refs'
 
+    if opt.use_pretrained:
+        opt.exp += '.use_bert'
     opt.exp += '.seed{}'.format(opt.seed)
     opt.exp += size_tag
 

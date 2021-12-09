@@ -7,8 +7,8 @@ import argparse
 from torch.optim import Adam
 
 import config
-from train_mixture import  loss_function, EPS, \
-     fix_model_seq2seq_decoder, unfix_model_seq2seq_decoder
+from train_mixture import loss_function, EPS, \
+    fix_model_seq2seq_decoder, unfix_model_seq2seq_decoder
 from pykp.seq2seq_new import TopicSeq2SeqModel
 from train import process_opt
 from utils.data_loader import load_data_and_vocab
@@ -27,9 +27,8 @@ import sys
 import os
 from tensorboardX import SummaryWriter
 import torch.multiprocessing
-torch.multiprocessing.set_sharing_strategy('file_system')
+# torch.multiprocessing.set_sharing_strategy('file_system')
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
 
 
 def init_optimizers(model, opt):
@@ -53,7 +52,7 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
         for batch_i, batch in enumerate(data_loader):
             if not opt.one2many:  # load one2one dataset
                 src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow, \
-                ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph = batch
+                ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_emb = batch
             else:  # load one2many dataset
                 src, src_lens, src_mask, src_oov, oov_lists, src_str_list, trg_str_2dlist, trg, trg_oov, trg_lens, trg_mask, _ = batch
                 num_trgs = [len(trg_str_list) for trg_str_list in
@@ -77,13 +76,16 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
 
             src_bow = src_bow.to(opt.device)
             src_bow_norm = F.normalize(src_bow)
-
+            if opt.use_pretrained:
+                query_emb = query_emb.to(opt.device)
+            else:
+                query_emb = None
             start_time = time.time()
 
             # for one2one setting
             ref_input = (ref_docs, ref_lens, ref_doc_lens, ref_oovs)
             seq2seq_output, topic_model_output = topic_seq2seqModel(src, src_lens, trg, src_oov, max_num_oov, src_mask,
-                                                                     src_bow_norm, ref_input, graph=graph)
+                                                                    src_bow_norm, query_emb=query_emb, ref_input=ref_input, graph=graph)
             decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
             topic_represent, topic_represent_drop, recon_batch, mu, logvar = topic_model_output
 
@@ -116,9 +118,9 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
 
 def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer, total_batch, begin_iterate_train_ntm):
     # train for one batch
-
-    src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow,\
-            ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph = batch
+    #  begin_iterate_train_ntm whether train ntm only
+    src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow, \
+    ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_embeds = batch
     max_num_oov = max([len(oov) for oov in oov_lists])  # max number of oov for each batch
 
     # move data to GPU if available
@@ -139,9 +141,16 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
     start_time = time.time()
     src_bow = src_bow.to(opt.device)
     src_bow_norm = F.normalize(src_bow)
+    if opt.use_pretrained:
+        query_embeds = query_embeds.to(opt.device)
+    else:
+        query_embeds = None
     ref_input = (ref_docs, ref_lens, ref_doc_lens, ref_oovs)
     seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, trg, src_oov, max_num_oov, src_mask,
-                                                             src_bow_norm, ref_input, begin_iterate_train_ntm=begin_iterate_train_ntm, graph=graph)
+                                                             src_bow_norm, query_emb=query_embeds,
+                                                             ref_input=ref_input,
+                                                             begin_iterate_train_ntm=begin_iterate_train_ntm,
+                                                             graph=graph)
     decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
 
     if opt.use_contextNTM:
@@ -157,14 +166,16 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
     start_time = time.time()
 
     if begin_iterate_train_ntm:
-        loss = ntm_loss * 0
+        loss = 0 * ntm_loss
     else:
         if opt.copy_attention:  # Compute the loss using target with oov words
             loss = masked_cross_entropy(decoder_dist, trg_oov, trg_mask, trg_lens,
-                                        opt.coverage_attn, coverage, attention_dist, opt.lambda_coverage, opt.coverage_loss)
+                                        opt.coverage_attn, coverage, attention_dist, opt.lambda_coverage,
+                                        opt.coverage_loss)
         else:  # Compute the loss using target without oov words
             loss = masked_cross_entropy(decoder_dist, trg, trg_mask, trg_lens,
-                                        opt.coverage_attn, coverage, attention_dist, opt.lambda_coverage, opt.coverage_loss)
+                                        opt.coverage_attn, coverage, attention_dist, opt.lambda_coverage,
+                                        opt.coverage_loss)
 
     writer.add_scalar("Train/ntm_loss", ntm_loss.item(), total_batch)
     writer.add_scalar("Train/seq2sseq_loss", loss.item(), total_batch)
@@ -274,7 +285,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 topicSeq2Seq_model.topic_model.train()
                 fix_model_seq2seq_decoder(topicSeq2Seq_model)
                 logging.info("\nTraining ntm epoch: {}/{}".format(epoch, opt.epochs))
-                if last_train_ntm_epoch > 100:
+                if last_train_ntm_epoch > 200:
                     begin_iterate_train_ntm = False
                     # 仅使用生成的Loss更新
                     opt.add_two_loss = False
@@ -290,14 +301,15 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                     begin_iterate_train_ntm = True
                     last_train_joint_epoch = 0
                     opt.add_two_loss = True
-            # topicSeq2Seq_model.train()
+
             train_ntm = begin_iterate_train_ntm and epoch > opt.p_seq2seq_e
             logging.info("The total num of batches: %d, current learning rate:%.6f train_ntm:%d" %
                          (len(train_data_loader), optimizer.param_groups[0]['lr'], train_ntm))
 
             for batch_i, batch in enumerate(train_data_loader):
                 total_batch += 1
-                batch_loss_stat = train_one_batch(batch, topicSeq2Seq_model, optimizer, opt, batch_i, writer, total_batch, train_ntm)
+                batch_loss_stat = train_one_batch(batch, topicSeq2Seq_model, optimizer, opt, batch_i, writer,
+                                                  total_batch, train_ntm)
                 report_train_loss_statistics.update(batch_loss_stat)
                 total_train_loss_statistics.update(batch_loss_stat)
 
@@ -307,13 +319,13 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
 
             current_train_ppl = report_train_loss_statistics.ppl()
             current_train_loss = report_train_loss_statistics.xent()
-
+            writer.add_scalar('Train/total_loss', current_train_loss, epoch)
             # test the model on the validation dataset for one epoch
             if train_ntm is not True:
                 valid_loss_stat = evaluate_loss(valid_data_loader, topicSeq2Seq_model, opt)
                 current_valid_loss = valid_loss_stat.xent()
                 current_valid_ppl = valid_loss_stat.ppl()
-                writer.add_scalar('Train/valid_loss', current_valid_loss, total_batch)
+                writer.add_scalar('Train/valid_loss', current_valid_loss, epoch)
                 # debug
                 if math.isnan(current_valid_loss) or math.isnan(current_train_loss):
                     logging.info(
@@ -332,7 +344,8 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                                                                                                   'topwords_e%d.txt' % epoch))
                     if epoch >= opt.start_checkpoint_at and epoch > opt.p_seq2seq_e and not opt.save_each_epoch:
                         check_pt_model_path = os.path.join(opt.model_path, 'e%d.val_loss=%.3f.model-%s' %
-                                                           (epoch, current_valid_loss, convert_time2str(time.time() - t0)))
+                                                           (epoch, current_valid_loss,
+                                                            convert_time2str(time.time() - t0)))
                         # save model parameters
                         torch.save(
                             topicSeq2Seq_model.state_dict(),

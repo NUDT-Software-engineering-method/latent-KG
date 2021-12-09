@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pykp.masked_softmax import MaskedSoftmax
 
+
 class Attention(nn.Module):
     def __init__(self, decoder_size, memory_bank_size, coverage_attn, attn_mode):
         super(Attention, self).__init__()
@@ -272,7 +273,9 @@ class TopicAttention(nn.Module):
         return context, attn_dist, coverage
 
 class ContextTopicAttention(nn.Module):
-
+    """
+     参考SCI的论文 编码器和主题嵌入 进行双向Attention
+    """
     def __init__(self, encoder_hidden_size, topic_num, topic_emb_dim, threshold=0.15):
         super(ContextTopicAttention, self).__init__()
         assert encoder_hidden_size == topic_emb_dim
@@ -317,6 +320,11 @@ class ContextTopicAttention(nn.Module):
         return topic_mean_hidden, topic_max_hidden, hidden_topic_state
 
 class TopicEmbeddingAttention(nn.Module):
+    """
+    query： encoder的隐藏状态 key value：主题嵌入向量
+    计算每个时间步t 对于加权topic embedding向量
+    """
+
     def __init__(self, encoder_hidden_size, topic_num, topic_emb_dim):
         super(TopicEmbeddingAttention, self).__init__()
         self.encoder_hidden_size = encoder_hidden_size
@@ -334,12 +342,12 @@ class TopicEmbeddingAttention(nn.Module):
         """
         batch_size = encoder_memory.shape[0]
 
-        topic_seq_w = torch.matmul(self.W, topic_emb.T)             # [hidden_size, topic_num]
-        seq_topic_w = torch.matmul(encoder_memory, topic_seq_w)     # [batch_size, seq, topic_num]
+        topic_seq_w = torch.matmul(self.W, topic_emb.T)  # [hidden_size, topic_num]
+        seq_topic_w = torch.matmul(encoder_memory, topic_seq_w)  # [batch_size, seq, topic_num]
 
         # 计算在每个时间步t下面 加权的topic_embedding
-        seq_topic_w = F.softmax(seq_topic_w, dim=2)                 # [batch_size, seq, topic_num]
-        hidden_topic_state = torch.matmul(seq_topic_w, topic_emb)   # [batch_size, seq, topic_embedding_size]
+        seq_topic_w = F.softmax(seq_topic_w, dim=2)  # [batch_size, seq, topic_num]
+        hidden_topic_state = torch.matmul(seq_topic_w, topic_emb)  # [batch_size, seq, topic_embedding_size]
 
         return hidden_topic_state
 
@@ -357,8 +365,7 @@ class TopicMemeoryMechanism(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU(inplace=True)
 
-
-    def forward(self, y_embed, topic_word_dist, topic_represent, gamma = 0.8):
+    def forward(self, y_embed, topic_word_dist, topic_represent, gamma=0.8):
         batch_size = y_embed.shape[0]
 
         y_features = self.embed_project(y_embed)
@@ -373,10 +380,10 @@ class TopicMemeoryMechanism(nn.Module):
         # [batch_size*topic_num, embed_size]
         source_features = source_features.view(-1, self.embed_size)
         # [batch_size*topic_num, 1]
-        p_k_weights = self.sigmoid(self.weight_p(source_features+y_features))
+        p_k_weights = self.sigmoid(self.weight_p(source_features + y_features))
         p_k_weights = p_k_weights.view(batch_size, self.topic_num)
 
-        p_batch = torch.add(gamma*p_k_weights, topic_represent)
+        p_batch = torch.add(gamma * p_k_weights, topic_represent)
 
         target_weight = self.relu(self.target_linear(topic_word_dist))
         out_embedding = torch.matmul(p_batch, target_weight)

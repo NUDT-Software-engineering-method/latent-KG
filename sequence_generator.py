@@ -203,11 +203,11 @@ class SequenceGenerator(object):
                     self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank,
                                        hidden_topic_state_memory, src_mask,
                                        max_num_oov,
-                                       src_oov, coverage)
+                                       src_oov, coverage, topic_embedding=self.ntm_model.get_topic_embedding())
             else:
                 decoder_dist, decoder_state, context, attn_dist, _, coverage = \
                     self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank, src_mask,
-                                       max_num_oov, src_oov, coverage)
+                                       max_num_oov, src_oov, coverage, topic_embedding=self.ntm_model.get_topic_embedding())
             log_decoder_dist = torch.log(decoder_dist + EPS)
 
             if self.review_attn:
@@ -229,7 +229,7 @@ class SequenceGenerator(object):
         return result_dict
 
     def beam_search_by_refs(self, src, src_lens, src_oov, src_mask, src_bow, oov_lists, word2idx, ref_input,
-                            max_eos_per_output_seq=1, graph=None):
+                            max_eos_per_output_seq=1, graph=None, query_embedding=None):
         """
         :param src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
         :param src_lens: a list containing the length of src sequences for each batch, with len=batch
@@ -245,22 +245,25 @@ class SequenceGenerator(object):
         ref_docs, ref_lens, ref_doc_lens, ref_oovs = ref_input
         # Encoding
         encoder_output, encoder_mask = self.model.encoder(src, src_lens, ref_docs,
-                                                          ref_lens, ref_doc_lens,graph=graph)
-        #TODO: 这里记得推理时候需要修改 主题的模型的输入
+                                                          ref_lens, ref_doc_lens, graph=graph)
+        # TODO: 这里记得推理时候需要修改 主题的模型的输入
         memory_bank, encoder_final_state, encoder_final_gat, ref_word_reps, ref_doc_reps = encoder_output
         ref_doc_mask, ref_word_mask = encoder_mask
         ref_doc_mask = ref_doc_mask.to(src.device)
         ref_word_mask = ref_word_mask.to(src.device)
         # [batch_size, max_src_len, memory_bank_size], [batch_size, memory_bank_size]
-
+        if query_embedding is None:
+            topic_context = encoder_final_state
+        else:
+            topic_context = query_embedding
         # Generate topic representation
         if self.use_topic_represent:
             src_bow_norm = F.normalize(src_bow)
             self.ntm_model.eval()
             if self.topic_type == 'z':
-                topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, topic_context)
             else:
-                _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, topic_context)
 
             topic_represent = topic_represent.repeat(self.beam_size, 1)  # [batch * beam_size, topic_num]
         else:
@@ -290,18 +293,19 @@ class SequenceGenerator(object):
         memory_bank = memory_bank.repeat(beam_size, 1, 1)  # [batch * beam_size, max_src_len, memory_bank_size]
         src_mask = src_mask.repeat(beam_size, 1)  # [batch * beam_size, src_seq_len]
         src_oov = src_oov.repeat(self.beam_size, 1)  # [batch * beam_size, src_seq_len]
-        decoder_state = decoder_init_state.repeat(1, self.beam_size, 1)  # [dec_layers, batch_size * beam_size, decoder_size]
+        decoder_state = decoder_init_state.repeat(1, self.beam_size,
+                                                  1)  # [dec_layers, batch_size * beam_size, decoder_size]
         # print("Size: ref_word_reps:{}, ref_doc_reps:{}, ref_oovs:{}, ref_doc_mask:{}, ref_word_mask:{}".format(
         #     ref_word_reps.size(), ref_doc_reps.size(), ref_oovs.size(), ref_doc_mask.size(), ref_word_mask.size()
         # ))
         # ref_docs, ref_lens, ref_doc_lens, ref_oovs
-        ref_word_reps = ref_word_reps.repeat(beam_size, 1, 1, 1)    # [batch * beam_size, ref_nums, max_src_len, memory_bank_size]
-        ref_doc_reps = ref_doc_reps.repeat(beam_size, 1, 1)         # [batch * beam_size, ref_nums, memory_bank_size]
-        ref_oovs = ref_oovs.repeat(beam_size, 1, 1)                 # [batch * beam_size, ref_nums, max_src_len]
-        ref_doc_mask = ref_doc_mask.repeat(beam_size, 1)            # [batch * beam_size, ref_nums]
-        ref_word_mask = ref_word_mask.repeat(beam_size, 1, 1)       # # [batch * beam_size, ref_nums, max_src_len]
+        ref_word_reps = ref_word_reps.repeat(beam_size, 1, 1,
+                                             1)  # [batch * beam_size, ref_nums, max_src_len, memory_bank_size]
+        ref_doc_reps = ref_doc_reps.repeat(beam_size, 1, 1)  # [batch * beam_size, ref_nums, memory_bank_size]
+        ref_oovs = ref_oovs.repeat(beam_size, 1, 1)  # [batch * beam_size, ref_nums, max_src_len]
+        ref_doc_mask = ref_doc_mask.repeat(beam_size, 1)  # [batch * beam_size, ref_nums]
+        ref_word_mask = ref_word_mask.repeat(beam_size, 1, 1)  # # [batch * beam_size, ref_nums, max_src_len]
         # exclusion_list = ["<t>", "</t>", "."]
-
 
         exclusion_tokens = set([word2idx[t] for t in self.ignore_when_blocking])
 
@@ -346,23 +350,25 @@ class SequenceGenerator(object):
             # run one step of decoding
             # [flattened_batch, vocab_size], [dec_layers, flattened_batch, decoder_size], [flattened_batch, memory_bank_size], [flattened_batch, src_len], [flattened_batch, src_len]
             decoder_dist, decoder_state, context, attn_dist, p_gen, coverage = self.model.decoder(decoder_input,
-                                                                                             topic_represent,
-                                                                                             decoder_state,
-                                                                                             memory_bank, src_mask,
-                                                                                             max_num_oov,
-                                                                                             src_oov, coverage,
-                                                                                             ref_word_reps,
-                                                                                             ref_doc_reps,
-                                                                                             ref_word_mask,
-                                                                                             ref_doc_mask, ref_oovs)
+                                                                                                  topic_represent,
+                                                                                                  decoder_state,
+                                                                                                  memory_bank, src_mask,
+                                                                                                  max_num_oov,
+                                                                                                  src_oov, coverage,
+                                                                                                  ref_word_reps,
+                                                                                                  ref_doc_reps,
+                                                                                                  ref_word_mask,
+                                                                                                  ref_doc_mask,
+                                                                                                  ref_oovs)
             log_decoder_dist = torch.log(decoder_dist + EPS)
 
             if self.review_attn:
-                decoder_memory_bank = torch.cat([decoder_memory_bank, decoder_state[-1, :, :].unsqueeze(1)], dim=1)     # [batch_size * beam_size, t+1, decoder_size]
+                decoder_memory_bank = torch.cat([decoder_memory_bank, decoder_state[-1, :, :].unsqueeze(1)],
+                                                dim=1)  # [batch_size * beam_size, t+1, decoder_size]
 
             # Compute a vector of batch x beam word scores
-            log_decoder_dist = log_decoder_dist.view(beam_size, batch_size, -1)     # [beam_size, batch_size, vocab_size]
-            attn_dist = attn_dist.view(beam_size, batch_size, -1)                   # [beam_size, batch_size, src_seq_len]
+            log_decoder_dist = log_decoder_dist.view(beam_size, batch_size, -1)  # [beam_size, batch_size, vocab_size]
+            attn_dist = attn_dist.view(beam_size, batch_size, -1)  # [beam_size, batch_size, src_seq_len]
 
             # Advance each beam
             for batch_idx, beam in enumerate(beam_list):
@@ -386,9 +392,11 @@ class SequenceGenerator(object):
                 hyp, att = b.get_hyp(times, k)
                 hyps.append(hyp)
                 attn.append(att)
-            ret["predictions"].append(hyps)     # 3d list of idx (zero dim tensor), with len [batch_size, n_best, output_seq_len]
-            ret['scores'].append(scores)        # a 2d list of zero dim tensor, with len [batch_size, n_best]
-            ret["attention"].append(attn)       # a 2d list of FloatTensor[output sequence length, src_len] , with len [batch_size, n_best]
+            ret["predictions"].append(
+                hyps)  # 3d list of idx (zero dim tensor), with len [batch_size, n_best, output_seq_len]
+            ret['scores'].append(scores)  # a 2d list of zero dim tensor, with len [batch_size, n_best]
+            ret["attention"].append(
+                attn)  # a 2d list of FloatTensor[output sequence length, src_len] , with len [batch_size, n_best]
             # hyp[::-1]: a list of idx (zero dim tensor), with len = output sequence length
             # torch.stack(attn): FloatTensor, with size: [output sequence length, src_len]
         return ret

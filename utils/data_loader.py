@@ -29,7 +29,7 @@ def load_data_and_vocab(opt, load_train=True):
 
     # constructor data loader
     logging.info("Loading train and validate data from '%s'" % opt.data)
-
+    pin_memory = True
     if load_train:  # load training dataset
         if not opt.one2many:  # load one2one dataset
             if not opt.custom_data_filename_suffix:
@@ -43,11 +43,11 @@ def load_data_and_vocab(opt, load_train=True):
                                                      use_multidoc_graph=opt.use_refs)
             train_loader = DataLoader(dataset=train_one2one_dataset,
                                       collate_fn=train_one2one_dataset.collate_fn_one2one,
-                                      num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=True,
+                                      num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=pin_memory,
                                       shuffle=True)
             train_bow_loader = DataLoader(dataset=train_one2one_dataset,
                                           collate_fn=train_one2one_dataset.collate_bow,
-                                          num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=True,
+                                          num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=pin_memory,
                                           shuffle=True)
             logging.info('#(train data size: #(batch)=%d' % (len(train_loader)))
 
@@ -61,11 +61,11 @@ def load_data_and_vocab(opt, load_train=True):
                                                      remove_src_eos=opt.remove_src_eos)
             valid_loader = DataLoader(dataset=valid_one2one_dataset,
                                       collate_fn=valid_one2one_dataset.collate_fn_one2one,
-                                      num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=True,
+                                      num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=pin_memory,
                                       shuffle=False)
             valid_bow_loader = DataLoader(dataset=valid_one2one_dataset,
                                           collate_fn=valid_one2one_dataset.collate_bow,
-                                          num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=True,
+                                          num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=pin_memory,
                                           shuffle=False)
             logging.info('#(valid data size: #(batch)=%d' % (len(valid_loader)))
 
@@ -79,7 +79,7 @@ def load_data_and_vocab(opt, load_train=True):
                                                       load_train=load_train, remove_src_eos=opt.remove_src_eos)
             train_loader = DataLoader(dataset=train_one2many_dataset,
                                       collate_fn=train_one2many_dataset.collate_fn_one2many,
-                                      num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=True,
+                                      num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=pin_memory,
                                       shuffle=True)
             logging.info('#(train data size: #(batch)=%d' % (len(train_loader)))
 
@@ -93,7 +93,7 @@ def load_data_and_vocab(opt, load_train=True):
                                                       load_train=load_train, remove_src_eos=opt.remove_src_eos)
             valid_loader = DataLoader(dataset=valid_one2many_dataset,
                                       collate_fn=valid_one2many_dataset.collate_fn_one2many,
-                                      num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=True,
+                                      num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=pin_memory,
                                       shuffle=False)
             logging.info('#(valid data size: #(batch)=%d' % (len(valid_loader)))
         return train_loader, train_bow_loader, valid_loader, valid_bow_loader, word2idx, idx2word, vocab, bow_dictionary
@@ -108,7 +108,7 @@ def load_data_and_vocab(opt, load_train=True):
                                                  load_train=load_train, remove_src_eos=opt.remove_src_eos)
         test_loader = DataLoader(dataset=test_one2many_dataset,
                                  collate_fn=test_one2many_dataset.collate_fn_one2many,
-                                 num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=True,
+                                 num_workers=opt.batch_workers, batch_size=opt.batch_size, pin_memory=pin_memory,
                                  shuffle=False)
         logging.info('#(test data size: #(batch)=%d' % (len(test_loader)))
 

@@ -9,25 +9,22 @@ from pykp.modules.gat import GAT
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, dropout=0.0):
+    def __init__(self, embed, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, dropout=0.0):
         super(RNNEncoder, self).__init__()
+        self.embedding = embed
         self.vocab_size = vocab_size
         self.embed_size = embed_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.bidirectional = bidirectional
         self.pad_token = pad_token
-        self.embedding = nn.Embedding(
-            self.vocab_size,
-            self.embed_size,
-            self.pad_token
-        )
         self.rnn = nn.GRU(input_size=embed_size, hidden_size=hidden_size, num_layers=num_layers,
                           bidirectional=bidirectional, batch_first=True, dropout=dropout)
 
     @classmethod
-    def from_opt(cls, opt):
-        return cls(vocab_size=opt.opt.vocab_size,
+    def from_opt(cls, opt, embed):
+        return cls(embed=embed,
+                   vocab_size=opt.opt.vocab_size,
                    embed_size=opt.word_vec_size,
                    hidden_size=opt.encoder_size,
                    num_layers=opt.enc_layers,
@@ -65,17 +62,18 @@ class RNNEncoder(nn.Module):
 
 
 class AttentionRNNEncoder(RNNEncoder):
-    def __init__(self, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, topic_num,
+    def __init__(self, embed, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, topic_num,
                  topic_embed_dim, dropout=0.0):
-        super(AttentionRNNEncoder, self).__init__(vocab_size, embed_size, hidden_size, num_layers, bidirectional,
+        super(AttentionRNNEncoder, self).__init__(embed, vocab_size, embed_size, hidden_size, num_layers, bidirectional,
                                                   pad_token, dropout=dropout)
         self.topic_embedding_biattention = TopicEmbeddingAttention(encoder_hidden_size=hidden_size * 2,
                                                                    topic_num=topic_num, topic_emb_dim=topic_embed_dim)
         self.merge_layer = nn.Linear(2 * hidden_size + topic_embed_dim, 2 * hidden_size)
 
     @classmethod
-    def from_opt(cls, opt):
-        return cls(vocab_size=opt.opt.vocab_size,
+    def from_opt(cls, opt, embed):
+        return cls(embed=embed,
+                   vocab_size=opt.opt.vocab_size,
                    embed_size=opt.word_vec_size,
                    hidden_size=opt.encoder_size,
                    num_layers=opt.enc_layers,
@@ -130,16 +128,17 @@ def sequence_mask(lengths, max_len=None):
 
 
 class RefRNNEncoder(RNNEncoder):
-    def __init__(self, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, opt, dropout=0.0):
-        super(RefRNNEncoder, self).__init__(vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token,
+    def __init__(self, embed, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token, opt, dropout=0.0):
+        super(RefRNNEncoder, self).__init__(embed, vocab_size, embed_size, hidden_size, num_layers, bidirectional, pad_token,
                                             dropout=dropout)
         self.rnn_ref = nn.GRU(input_size=embed_size, hidden_size=hidden_size, num_layers=num_layers + 1,
                               bidirectional=bidirectional, batch_first=True, dropout=dropout)
         self.gat = GAT.from_opt(opt, self.embedding)
 
     @classmethod
-    def from_opt(cls, opt):
-        return cls(vocab_size=opt.vocab_size,
+    def from_opt(cls, opt, embed):
+        return cls(embed=embed,
+                   vocab_size=opt.vocab_size,
                    embed_size=opt.word_vec_size,
                    hidden_size=opt.encoder_size,
                    num_layers=opt.enc_layers,

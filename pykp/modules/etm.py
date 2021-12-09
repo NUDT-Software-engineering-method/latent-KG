@@ -275,7 +275,7 @@ class ETM(nn.Module):
             ## get \beta here
             beta = self.get_beta()
 
-            ### do dc and tc here
+            # do dc and tc here
             acc_loss = 0
             cnt = 0
             indices_1 = torch.split(torch.tensor(range(args.num_docs_test_1)), args.eval_batch_size)
@@ -287,7 +287,7 @@ class ETM(nn.Module):
                 else:
                     normalized_data_batch_1 = data_batch_1
                 theta, _ = self.get_theta(normalized_data_batch_1)
-                ## get predition loss using second half
+                # get predition loss using second half
                 data_batch_2 = get_batch(test_2, indice, device)
                 sums_2 = data_batch_2.sum(1).unsqueeze(1)
                 res = torch.mm(theta, beta)

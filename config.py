@@ -59,6 +59,7 @@ def my_own_opts(parser):
                         help='add attention layer in topic_embedding in decoder')
     parser.add_argument('-use_refs', default=False, action='store_true', help='add ref docs layer in encoder and decoder')
     parser.add_argument('-load_pretrain_ntm', default=False, action='store_true')
+    parser.add_argument('-use_fusion_embed', default=False, action='store_true')
     parser.add_argument('-only_train_ntm', default=False, action='store_true')
     parser.add_argument('-check_pt_ntm_model_path', type=str)
     parser.add_argument('-ntm_warm_up_epochs', type=int, default=0)
@@ -93,26 +94,11 @@ def model_opts(parser):
                         help='Size of encoder hidden states')
     parser.add_argument('-decoder_size', type=int, default=300,
                         help='Size of decoder hidden states')
-
     parser.add_argument('-dropout', type=float, default=0.1,
                         help="Dropout probability; applied in LSTM stacks.")
-    # parser.add_argument('-input_feed', type=int, default=1,
-    #                     help="""Feed the context vector at each time step as
-    #                     additional input (via concatenation with the word
-    #                     embeddings) to the decoder.""")
-
     parser.add_argument('-rnn_type', type=str, default='GRU',
                         choices=['LSTM', 'GRU'],
                         help="The gate type to use in the RNNs")
-    # parser.add_argument('-residual',   action="store_true",
-    #                     help="Add residual connections between RNN layers.")
-
-    # parser.add_argument('-input_feeding', action="store_true",
-    #                    help="Apply input feeding or not. Feed the updated hidden vector (after attention)"
-    #                         "as new hidden vector to the decoder (Luong et al. 2015). "
-    #                         "Feed the context vector at each time step  after normal attention"
-    #                         "as additional input (via concatenation with the word"
-    #                         "embeddings) to the decoder.")
 
     parser.add_argument('-bidirectional', default=True,
                         action="store_true",
@@ -121,35 +107,15 @@ def model_opts(parser):
     parser.add_argument('-bridge', type=str, default='copy',
                         choices=['copy', 'dense', 'dense_nonlinear', 'none'],
                         help="An additional layer between the encoder and the decoder")
-
     # Attention options
     parser.add_argument('-attn_mode', type=str, default='concat',
                         choices=['general', 'concat'],
                         help="""The attention type to use:
                        dot or general (Luong) or concat (Bahdanau)""")
-    # parser.add_argument('-attention_mode', type=str, default='concat',
-    #                    choices=['dot', 'general', 'concat'],
-    #                    help="""The attention type to use:
-    #                    dot or general (Luong) or concat (Bahdanau)""")
 
     # Genenerator and loss options.
     parser.add_argument('-copy_attention', action="store_true",
                         help='Train a copy model.')
-
-    # parser.add_argument('-copy_mode', type=str, default='concat',
-    #                    choices=['dot', 'general', 'concat'],
-    #                    help="""The attention type to use: dot or general (Luong) or concat (Bahdanau)""")
-
-    # parser.add_argument('-copy_input_feeding', action="store_true",
-    #                    help="Feed the context vector at each time step after copy attention"
-    #                         "as additional input (via concatenation with the word"
-    #                         "embeddings) to the decoder.")
-
-    # parser.add_argument('-reuse_copy_attn', action="store_true",
-    #                   help="Reuse standard attention for copy (see See et al.)")
-
-    # parser.add_argument('-copy_gate', action="store_true",
-    #                    help="A gate controling the flow from generative model and copy model (see See et al.)")
 
     parser.add_argument('-coverage_attn', action="store_true",
                         help='Train a coverage attention layer.')
@@ -167,20 +133,12 @@ def model_opts(parser):
     parser.add_argument('-lambda_target_encoder', type=float, default=0.03,
                         help='Lambda value for the target encoder loss by Yuan et al.')
 
-    # parser.add_argument('-context_gate', type=str, default=None,
-    #                     choices=['source', 'target', 'both'],
-    #                     help="""Type of context gate to use.
-    #                     Do not select for no context gate by Tu:2017:TACL.""")
-
-    # group.add_argument('-lambda_coverage', type=float, default=1,
-    #                    help='Lambda value for coverage.')
-
     # Cascading model options
-    # parser.add_argument('-cascading_model', action="store_true", help='Train a copy model.')
     # if true use context by ntm if false use
     parser.add_argument('-use_contextNTM', default=False, action='store_true',
                         help="Whether use contextNTM.")
-
+    parser.add_argument('-use_pretrained', default=False, action='store_true',
+                        help="Whether use sentenceBert to topic model")
     # Graph Options
     parser.add_argument('--gat_n_head', type=int, default=5,
                         help='multihead attention number')
@@ -359,7 +317,6 @@ def train_opts(parser):
                         help='Remove the eos token at the end of src text')
 
     # GPU
-
     # Teacher Forcing and Scheduled Sampling
     parser.add_argument('-must_teacher_forcing', action="store_true",
                         help="Apply must_teacher_forcing or not")

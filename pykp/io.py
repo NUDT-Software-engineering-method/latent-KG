@@ -126,6 +126,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         # ref docs
         if self.use_multidoc_graph:
             query_embeddings = [b['query_embedding'] for b in batches]
+            query_embeddings = torch.Tensor(query_embeddings)
             ref_docs = [b['ref_docs'] for b in batches]
             if self.use_multidoc_copy:
                 assert batches[0]['ref_oov'] is not None, "set use_multidoc_copy in preprocess!"
@@ -241,6 +242,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         # get ref oovs
         if self.use_multidoc_graph:
             query_embeddings = [b['query_embedding'] for b in batches]
+            query_embeddings = torch.Tensor(query_embeddings)
             ref_docs = [b['ref_docs'] for b in batches]
             if self.use_multidoc_copy:
                 assert batches[0]['ref_oov'] is not None, "set use_multidoc_copy in preprocess!"
@@ -375,7 +377,6 @@ def build_one_example(src_tgt_pair, ref_docs_tokenized=None, graph_utils=None, q
 
         trg = [word2idx[w] if w in word2idx and word2idx[w] < opt.vocab_size
                else word2idx[UNK_WORD] for w in target]
-        # retriver reference source index
 
         example['trg'] = trg
         example['src_oov'] = src_oov
@@ -400,7 +401,7 @@ def build_one_example(src_tgt_pair, ref_docs_tokenized=None, graph_utils=None, q
         keys = examples[0].keys()
         for key in keys:
             if key.startswith('src') or key.startswith('oov') \
-                    or key.startswith('ref') or key.startswith('graph'):
+                    or key.startswith('ref') or key.startswith('graph') or key.startswith('query'):
                 o2m_example[key] = examples[0][key]
             else:
                 o2m_example[key] = [e[key] for e in examples]
@@ -437,6 +438,7 @@ def extend_vocab_OOV(source_words, word2idx, vocab_size, max_unk_words, pre_oov_
     for w in source_words:
         if w in word2idx and word2idx[w] < vocab_size:  # a OOV can be either outside the vocab or id>=vocab_size
             src_oov.append(word2idx[w])
+        # 不在规定的词表中
         else:
             if len(oov_dict) < max_unk_words:
                 # e.g. 50000 for the first article OOV, 50001 for the second...

@@ -10,8 +10,8 @@ from utils.time_log import time_since
 from evaluate import evaluate_beam_search
 from utils.data_loader import load_data_and_vocab
 import pykp.io
-from pykp.model import Seq2SeqModel, NTM
-
+from pykp.model import Seq2SeqModel
+from pykp.modules.ntm import NTM
 import os
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -73,6 +73,7 @@ def process_opt(opt):
 
     if ".no_topic_dec" in opt.model:
         opt.topic_dec = False
+
     elif ".use_topic" in opt.model:
         opt.topic_dec = True
 
@@ -91,17 +92,18 @@ def process_opt(opt):
     if '.useContextNTM' in opt.model:
         opt.use_contextNTM = True
 
+    if '.use_bert' in opt.model:
+        opt.use_pretrained = True
+
     if '.encoder_attn' in opt.model:
         opt.encoder_attention = True
 
     if '.use_refs' in opt.model:
         opt.use_refs = True
-    # TODO: 需要修改
-    # if ".use_topic" in opt.model:
-    #     opt.use_topic_represent = True
-    #     if '.joint_train' in opt.model:
-    #         opt.ntm_model = opt.model.replace('model-', 'model_ntm-')
-    #     assert os.path.exists(opt.ntm_model), 'please specify the ntm model'
+
+    if '.fusion_emb' in opt.model:
+        opt.use_fusion_embed = True
+
     opt.use_topic_represent = True
     if opt.n_best < 0:
         opt.n_best = opt.beam_size
