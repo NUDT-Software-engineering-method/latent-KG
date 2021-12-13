@@ -52,11 +52,11 @@ def read_src_trg_files(opt, tag="train"):
 
 
 def build_vocab(tokenized_src_trg_pairs):
-    '''
+    """
     Build the vocabulary from the training (src, trg) pairs
     :param tokenized_src_trg_pairs: list of (src, trg) pairs
     :return: word2idx, idx2word, token_freq_counter
-    '''
+    """
     token_freq_counter = Counter()
     for src_word_list, trg_word_lists in tokenized_src_trg_pairs:
         token_freq_counter.update(src_word_list)
@@ -92,13 +92,13 @@ def build_vocab(tokenized_src_trg_pairs):
 
 
 def make_bow_dictionary(tokenized_src_trg_pairs, data_dir, bow_vocab):
-    '''
+    """
     Build bag-of-word dictionary from tokenized_src_trg_pairs
     :param tokenized_src_trg_pairs: a list of (src, trg) pairs
     :param data_dir: data address, for distinguishing Weibo/Twitter/StackExchange
     :param bow_vocab: the size the bow vocabulary
     :return: bow_dictionary, a gensim.corpora.Dictionary object
-    '''
+    """
     doc_bow = []
     tgt_set = set()
 
@@ -141,17 +141,21 @@ def make_bow_dictionary(tokenized_src_trg_pairs, data_dir, bow_vocab):
 
     print("The original bow vocabulary: %d" % len(bow_dictionary))
     bow_dictionary.filter_extremes(no_below=3, keep_n=bow_vocab)
+    # after some tokens have been removed via filter_tokens() and there are gaps in the id series
     bow_dictionary.compactify()
+    # convert to bow vector
+    corpus = [bow_dictionary.doc2bow(line) for line in doc_bow]
+    tfidf_model = gensim.models.TfidfModel(corpus)
+
     bow_dictionary.id2token = dict([(id, t) for t, id in bow_dictionary.token2id.items()])
     # for debug
     sorted_dfs = sorted(bow_dictionary.dfs.items(), key=lambda x: x[1], reverse=True)
     sorted_dfs_token = [(bow_dictionary.id2token[id], cnt) for id, cnt in sorted_dfs]
     print('The top 50 non-stop-words: ', sorted_dfs_token[:50])
-    return bow_dictionary
+    return bow_dictionary, tfidf_model
 
 
 def main(opt):
-
     t0 = time.time()
     # Tokenize training data, return a list of tuple, (src_word_list, [trg_1_word_list, trg_2_word_list, ...])
     tokenized_train_pairs = read_src_trg_files(opt, "train")
@@ -163,7 +167,7 @@ def main(opt):
 
     # Build bag-of-word dictionary from training data
     print("Building bow dictionary from training data")
-    bow_dictionary = make_bow_dictionary(tokenized_train_pairs, opt.data_dir, opt.bow_vocab)
+    bow_dictionary, tf_idf_model = make_bow_dictionary(tokenized_train_pairs, opt.data_dir, opt.bow_vocab)
     print("Bow dict_size: %d after filtered" % len(bow_dictionary))
 
     print("Dumping dict to disk: %s\n" % (opt.res_data_dir + '/vocab.pt'))
@@ -178,15 +182,17 @@ def main(opt):
     opt.retriever = retriever
     # Build training set for one2one training mode
     # train_one2one is a list of dict, with fields src, trg, src_oov, oov_dict, oov_list, etc.
+    if opt.use_tfidf is False:
+        tf_idf_model = None
     train_one2one = pykp.io.build_dataset(
-        tokenized_train_pairs, word2idx, bow_dictionary, opt, mode='one2one')
+        tokenized_train_pairs, word2idx, bow_dictionary, opt, mode='one2one', tfidf_model=tf_idf_model)
     print("Dumping train one2one to disk: %s\n" % (opt.res_data_dir + '/train.one2one.pt'))
     torch.save(train_one2one, open(opt.res_data_dir + '/train.one2one.pt', 'wb'))
 
     # Processing valid dataset
     tokenized_valid_pairs = read_src_trg_files(opt, "valid")
     valid_one2one = pykp.io.build_dataset(
-        tokenized_valid_pairs, word2idx, bow_dictionary, opt, mode='one2one')
+        tokenized_valid_pairs, word2idx, bow_dictionary, opt, mode='one2one', tfidf_model=tf_idf_model)
 
     print("Dumping valid to disk: %s\n" % (opt.res_data_dir + '/valid.ne2one.pt'))
     torch.save(valid_one2one, open(opt.res_data_dir + '/valid.one2one.pt', 'wb'))
@@ -195,7 +201,7 @@ def main(opt):
     tokenized_test_pairs = read_src_trg_files(opt, "test")
     # Build test set for one2many training mode
     test_one2many = pykp.io.build_dataset(
-        tokenized_test_pairs, word2idx, bow_dictionary, opt, mode='one2many', is_train=False)
+        tokenized_test_pairs, word2idx, bow_dictionary, opt, mode='one2many', is_train=False, tfidf_model=tf_idf_model)
 
     print("Dumping test to disk: %s\n" % (opt.res_data_dir + '/test.one2many.pt'))
     torch.save(test_one2many, open(opt.res_data_dir + '/test.one2many.pt', 'wb'))
@@ -237,6 +243,7 @@ if __name__ == "__main__":
     elif 'StackExchange' in opt.data_dir:
         opt.max_src_len = 150
         opt.n_ref_docs = 3
+        opt.n_topic_words = 10
 
     data_fn = opt.data_dir.rstrip('/').split('/')[-1] + '_s{}_t{}'.format(opt.max_src_len, opt.max_trg_len)
 

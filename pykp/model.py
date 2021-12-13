@@ -51,13 +51,18 @@ class Seq2SeqModel(nn.Module):
 
         self.device = opt.device
         # 定义encoder和decoder共享的embedding
-        self.embed = nn.Embedding(
+        self.encoder_embed = nn.Embedding(
+            self.vocab_size,
+            self.emb_dim,
+            self.pad_idx_src
+        )
+        self.decoder_embed = nn.Embedding(
             self.vocab_size,
             self.emb_dim,
             self.pad_idx_src
         )
         self.encoder = RNNEncoder(
-            embed=self.embed,
+            embed=self.encoder_embed,
             vocab_size=self.vocab_size,
             embed_size=self.emb_dim,
             hidden_size=self.encoder_size,
@@ -68,7 +73,7 @@ class Seq2SeqModel(nn.Module):
         )
 
         self.decoder = RNNDecoder(
-            embed=self.embed,
+            embed=self.decoder_embed,
             vocab_size=self.vocab_size,
             embed_size=self.emb_dim,
             hidden_size=self.decoder_size,
@@ -98,13 +103,16 @@ class Seq2SeqModel(nn.Module):
         if self.bridge == 'copy':
             assert self.encoder_size * self.num_directions == self.decoder_size, \
                 'encoder hidden size and decoder hidden size are not match, please use a bridge layer'
-
+        if self.share_embeddings:
+            self.encoder_embed.weight = self.decoder_embed.weight
         self.init_weights()
 
     def init_weights(self):
         """Initialize weights."""
         initrange = 0.1
-        self.embed.weight.data.uniform_(-initrange, initrange)
+        self.encoder_embed.weight.data.uniform_(-initrange, initrange)
+        if not self.share_embeddings:
+            self.decoder_embed.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, src_lens, trg, src_oov, max_num_oov, src_mask, topic_represent, num_trgs=None, **kwargs):
         """

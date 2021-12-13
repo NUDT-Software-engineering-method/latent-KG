@@ -4,12 +4,13 @@ import torch
 import pykp.io as io
 
 
-def read_tokenized_src_file(src_file, max_src_len):
+def read_tokenized_src_file(src_file, max_src_len=None):
     references = []
     filtered_cnt = 0
     for src_line in open(src_file, 'r'):
         src_word_list = src_line.strip().split(' ')
-        src_word_list = src_word_list[:max_src_len]
+        if max_src_len is not None:
+            src_word_list = src_word_list[:max_src_len]
         if len(src_word_list) == 0:
             filtered_cnt += 1
             continue

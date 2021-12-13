@@ -28,7 +28,7 @@ import string
 stoplist = list(string.punctuation)
 
 
-class SBERTDocRanker():
+class SBERTDocRanker(object):
     """Loads a pre-weighted inverted index of token/document terms.
     Scores new queries by taking sparse dot products.
     """
@@ -77,7 +77,7 @@ class SBERTDocRanker():
             ref_docs = read_tokenized_src_file(ref_doc_path, self.opt.max_src_len)
             corpus_embeddings = self.model.encode(ref_docs, show_progress_bar=True, convert_to_numpy=True)
 
-            ### Create the FAITS index
+            # Create the FAITS index
             print("Start creating FAISS index")
             # First, we need to normalize vectors to unit length
             normalize_L2(corpus_embeddings)

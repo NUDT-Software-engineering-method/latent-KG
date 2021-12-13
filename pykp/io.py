@@ -93,11 +93,17 @@ class KeyphraseDataset(torch.utils.data.Dataset):
             bow_k = [k for k, v in bow]
             bow_v = [v for k, v in bow]
             res_src_bow[idx, bow_k] = bow_v
+
         return torch.FloatTensor(res_src_bow)
 
     def collate_bow(self, batches):
+        if self.remove_src_eos:
+            src = [b['src'] for b in batches]
+        else:
+            src = [b['src'] + [self.word2idx[EOS_WORD]] for b in batches]
+        src, src_lens, src_mask = self._pad(src)
         src_bow = [b['src_bow'] for b in batches]
-        return self._pad_bow(src_bow)
+        return src, src_lens,  self._pad_bow(src_bow)
 
     def collate_fn_one2one(self, batches):
         '''
@@ -285,16 +291,15 @@ class KeyphraseDataset(torch.utils.data.Dataset):
                ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_embeddings
 
 
-def build_dataset(src_trgs_pairs, word2idx, bow_dictionary, opt, mode='one2one', include_original=True, is_train=True,
-                  ref_docs_tokenized=None):
-    '''
+def build_dataset(src_trgs_pairs, word2idx, bow_dictionary, opt, mode='one2one', include_original=True, is_train=True, tfidf_model=None):
+    """
     Standard process for copy model
     :param mode: one2one or one2many
     :param include_original: keep the original texts of source and target
     :return:
-    '''
+    """
     _build_one_example = partial(build_one_example, opt=opt, mode=mode, include_original=include_original,
-                                 is_train=is_train, word2idx=word2idx, bow_dictionary=bow_dictionary)
+                                 is_train=is_train, word2idx=word2idx, bow_dictionary=bow_dictionary, tf_idf_model=tfidf_model)
 
     if not opt.retriever or not opt.dense_retrieve:
         with Pool(opt.num_workers) as processes:
@@ -320,7 +325,7 @@ def build_dataset(src_trgs_pairs, word2idx, bow_dictionary, opt, mode='one2one',
 
 
 def build_one_example(src_tgt_pair, ref_docs_tokenized=None, graph_utils=None, query_embedding=None, opt=None, mode='one2one',
-                      include_original=False, is_train=True, word2idx=None, bow_dictionary=None):
+                      include_original=False, is_train=True, word2idx=None, bow_dictionary=None, tf_idf_model=None):
     assert word2idx is not None, "word2idx should not be None"
     assert bow_dictionary is not None, "bow_dictionary should not be None"
     source, targets = src_tgt_pair
@@ -368,7 +373,8 @@ def build_one_example(src_tgt_pair, ref_docs_tokenized=None, graph_utils=None, q
 
         example['src'] = src
         example['src_bow'] = bow_dictionary.doc2bow(source)
-
+        if tf_idf_model is not None:
+            example['src_bow'] = tf_idf_model[example['src_bow']]
         if len(example['src_bow']) == 0:
             # for train and valid data, we do not account for zero bow, contrary for test
             if mode == "one2one":

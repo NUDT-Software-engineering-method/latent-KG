@@ -8,7 +8,7 @@ from torch.optim import Adam
 
 import config
 from train_mixture import loss_function, EPS, \
-    fix_model_seq2seq_decoder, unfix_model_seq2seq_decoder
+    fix_model_seq2seq_decoder, unfix_model_seq2seq_decoder, l1_penalty, check_sparsity, update_l1
 from pykp.seq2seq_new import TopicSeq2SeqModel
 from train import process_opt
 from utils.data_loader import load_data_and_vocab
@@ -27,6 +27,8 @@ import sys
 import os
 from tensorboardX import SummaryWriter
 import torch.multiprocessing
+
+
 # torch.multiprocessing.set_sharing_strategy('file_system')
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -70,9 +72,9 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
             trg_mask = trg_mask.to(opt.device)
             src_oov = src_oov.to(opt.device)
             trg_oov = trg_oov.to(opt.device)
-
-            ref_docs = ref_docs.to(opt.device)
-            ref_oovs = ref_oovs.to(opt.device)
+            if opt.use_refs:
+                ref_docs = ref_docs.to(opt.device)
+                ref_oovs = ref_oovs.to(opt.device)
 
             src_bow = src_bow.to(opt.device)
             src_bow_norm = F.normalize(src_bow)
@@ -85,7 +87,8 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
             # for one2one setting
             ref_input = (ref_docs, ref_lens, ref_doc_lens, ref_oovs)
             seq2seq_output, topic_model_output = topic_seq2seqModel(src, src_lens, trg, src_oov, max_num_oov, src_mask,
-                                                                    src_bow_norm, query_emb=query_emb, ref_input=ref_input, graph=graph)
+                                                                    src_bow_norm, query_emb=query_emb,
+                                                                    ref_input=ref_input, graph=graph)
             decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
             topic_represent, topic_represent_drop, recon_batch, mu, logvar = topic_model_output
 
@@ -116,7 +119,49 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
     return eval_loss_stat
 
 
-def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer, total_batch, begin_iterate_train_ntm):
+def train_one_ntm(topic_seq2seq_model, dataloader, optimizer, opt, epoch):
+    train_loss = 0
+    for batch_idx, batch in enumerate(dataloader):
+        src, src_lens, src_bow = batch
+        src = src.to(opt.device)
+        src_bow = src_bow.to(opt.device)
+        # normalize data
+        src_bow_norm = F.normalize(src_bow)
+
+        optimizer.zero_grad()
+        seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, src_bow=src_bow_norm, begin_iterate_train_ntm=True)
+        decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
+        if opt.use_contextNTM:
+            topic_represent, topic_represent_drop, recon_batch, post_mu, post_logvar = topic_model_output
+            loss = loss_function(recon_batch, src_bow, post_mu, post_logvar)
+            # loss = loss + topic_seq2seq_model.topic_model.l1_strength * l1_penalty(
+            #     topic_seq2seq_model.topic_model.get_topic_words().T)
+        else:
+            topic_represent, topic_represent_drop, recon_batch, (post_mu, post_var, post_logvar), (
+                p_mu, p_var) = topic_model_output
+            loss = topic_modeling_loss(src_bow, opt.topic_num, recon_batch, p_mu, p_var, post_mu, post_var, post_logvar)
+
+        loss.backward()
+
+        train_loss += loss.item()
+        optimizer.step()
+        if batch_idx % 100 == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(src_bow), len(dataloader.dataset),
+                       100. * batch_idx / len(dataloader),
+                       loss.item() / len(src_bow)))
+
+    logging.info('====>Train epoch: {} Average loss: {:.4f}'.format(
+        epoch, train_loss / len(dataloader.dataset)))
+    sparsity = check_sparsity(topic_seq2seq_model.topic_model.get_topic_words().T)
+    logging.info(
+        "Overall sparsity = %.3f, l1 strength = %.5f" % (sparsity, topic_seq2seq_model.topic_model.l1_strength))
+    logging.info("Target sparsity = %.3f" % opt.target_sparsity)
+    update_l1(topic_seq2seq_model.topic_model.l1_strength, sparsity, opt.target_sparsity)
+    return sparsity, train_loss
+
+
+def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, begin_iterate_train_ntm):
     # train for one batch
     #  begin_iterate_train_ntm whether train ntm only
     src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow, \
@@ -130,10 +175,10 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
     trg_mask = trg_mask.to(opt.device)
     src_oov = src_oov.to(opt.device)
     trg_oov = trg_oov.to(opt.device)
-
-    ref_docs = ref_docs.to(opt.device)
-    ref_oovs = ref_oovs.to(opt.device)
-    ref_doc_lens = ref_doc_lens.to(opt.device)
+    if opt.use_refs:
+        ref_docs = ref_docs.to(opt.device)
+        ref_oovs = ref_oovs.to(opt.device)
+        ref_doc_lens = ref_doc_lens.to(opt.device)
     # graph = graph.to(opt.device)
     # model.train()
     optimizer.zero_grad()
@@ -141,6 +186,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
     start_time = time.time()
     src_bow = src_bow.to(opt.device)
     src_bow_norm = F.normalize(src_bow)
+    # src_bow_norm = src_bow / torch.sum(src_bow, dim=1, keepdim=True)
     if opt.use_pretrained:
         query_embeds = query_embeds.to(opt.device)
     else:
@@ -176,9 +222,6 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
             loss = masked_cross_entropy(decoder_dist, trg, trg_mask, trg_lens,
                                         opt.coverage_attn, coverage, attention_dist, opt.lambda_coverage,
                                         opt.coverage_loss)
-
-    writer.add_scalar("Train/ntm_loss", ntm_loss.item(), total_batch)
-    writer.add_scalar("Train/seq2sseq_loss", loss.item(), total_batch)
     loss_compute_time = time_since(start_time)
 
     total_trg_tokens = sum(trg_lens)
@@ -220,6 +263,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
     backward_time = time_since(start_time)
 
     if opt.max_grad_norm > 0:
+        # 裁剪的decoder和encoder 不包含主题模型
         grad_norm_before_clipping = nn.utils.clip_grad_norm_(topic_seq2seq_model.parameters(), opt.max_grad_norm)
 
     optimizer.step()
@@ -232,7 +276,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, writer,
 
 
 def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole, train_data_loader, valid_data_loader,
-                bow_dictionary, opt):
+                train_ntm_dataloader, bow_dictionary, opt):
     writer = SummaryWriter(os.path.join(opt.model_path, 'log'))
     logging.info('======================  Start Training  =========================')
 
@@ -285,9 +329,9 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 topicSeq2Seq_model.topic_model.train()
                 fix_model_seq2seq_decoder(topicSeq2Seq_model)
                 logging.info("\nTraining ntm epoch: {}/{}".format(epoch, opt.epochs))
-                if last_train_ntm_epoch > 200:
+                if last_train_ntm_epoch > 50:
                     begin_iterate_train_ntm = False
-                    # 仅使用生成的Loss更新
+                    # 仅使用生成的Loss更新WW
                     opt.add_two_loss = False
                     last_train_ntm_epoch = 0
             else:
@@ -305,23 +349,27 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
             train_ntm = begin_iterate_train_ntm and epoch > opt.p_seq2seq_e
             logging.info("The total num of batches: %d, current learning rate:%.6f train_ntm:%d" %
                          (len(train_data_loader), optimizer.param_groups[0]['lr'], train_ntm))
+            # 只训练主题模型
+            if train_ntm:
+                _, train_loss = train_one_ntm(topic_seq2seq_model=topicSeq2Seq_model, optimizer=optimizer,
+                                              dataloader=train_ntm_dataloader, opt=opt, epoch=epoch)
+                writer.add_scalar('Train/ntm_loss', train_loss, epoch)
+            # 联合训练
+            else:
+                for batch_i, batch in enumerate(train_data_loader):
+                    total_batch += 1
+                    batch_loss_stat = train_one_batch(batch, topicSeq2Seq_model, optimizer, opt,
+                                                      total_batch, train_ntm)
+                    report_train_loss_statistics.update(batch_loss_stat)
+                    total_train_loss_statistics.update(batch_loss_stat)
 
-            for batch_i, batch in enumerate(train_data_loader):
-                total_batch += 1
-                batch_loss_stat = train_one_batch(batch, topicSeq2Seq_model, optimizer, opt, batch_i, writer,
-                                                  total_batch, train_ntm)
-                report_train_loss_statistics.update(batch_loss_stat)
-                total_train_loss_statistics.update(batch_loss_stat)
+                    if (batch_i + 1) % (len(train_data_loader) // 10) == 0:
+                        print("Train: %d/%d batches, current avg loss: %.3f" %
+                              ((batch_i + 1), len(train_data_loader), batch_loss_stat.xent()))
 
-                if (batch_i + 1) % (len(train_data_loader) // 10) == 0:
-                    print("Train: %d/%d batches, current avg loss: %.3f" %
-                          ((batch_i + 1), len(train_data_loader), batch_loss_stat.xent()))
-
-            current_train_ppl = report_train_loss_statistics.ppl()
-            current_train_loss = report_train_loss_statistics.xent()
-            writer.add_scalar('Train/total_loss', current_train_loss, epoch)
-            # test the model on the validation dataset for one epoch
-            if train_ntm is not True:
+                    current_train_ppl = report_train_loss_statistics.ppl()
+                    current_train_loss = report_train_loss_statistics.xent()
+                # test the model on the validation dataset for one epoch
                 valid_loss_stat = evaluate_loss(valid_data_loader, topicSeq2Seq_model, opt)
                 current_valid_loss = valid_loss_stat.xent()
                 current_valid_ppl = valid_loss_stat.ppl()
@@ -420,7 +468,7 @@ def main(opt):
         optimizer_seq, optimizer_ntm, optimizer_whole = init_optimizers(model=topic_seq2seq_model, opt=opt)
 
         train_model(topic_seq2seq_model, optimizer_seq, optimizer_ntm, optimizer_whole, train_data_loader,
-                    valid_data_loader, bow_dictionary, opt)
+                    valid_data_loader, train_bow_loader, bow_dictionary, opt)
 
         training_time = time_since(start_time)
 

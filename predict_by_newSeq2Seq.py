@@ -20,7 +20,6 @@ from pykp.seq2seq_new import TopicSeq2SeqModel
 import os
 from predict import process_opt
 import torch.multiprocessing
-torch.multiprocessing.set_sharing_strategy('file_system')
 
 def predict(test_data_loader, model, ntm_model, opt):
     if opt.delimiter_type == 0:

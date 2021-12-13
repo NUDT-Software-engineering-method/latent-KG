@@ -177,7 +177,7 @@ def vocab_opts(parser):
 
     parser.add_argument('-dynamic_dict', default=True,
                         action='store_true', help="Create dynamic dictionaries (for copy)")
-
+    parser.add_argument('-use_tfidf', default=False, action='store_true', help="Whether to use a tfidf as bow src")
 
 def train_opts(parser):
     # Model loading/saving options

@@ -20,16 +20,16 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         self.encoder_attention = opt.encoder_attention
 
         if opt.encoder_attention:
-            self.encoder = AttentionRNNEncoder.from_opt(opt, self.embed)
+            self.encoder = AttentionRNNEncoder.from_opt(opt, self.encoder_embed)
         self.topic_words = opt.topic_words
         if opt.topic_words:
-            self.decoder = RNNDecoderTW.from_opt(opt, self.embed)
+            self.decoder = RNNDecoderTW.from_opt(opt, self.decoder_embed)
         self.use_refs = opt.use_refs
         self.use_pretrained = opt.use_pretrained
 
         if opt.use_refs:
-            self.encoder = RefRNNEncoder.from_opt(opt, self.embed)
-            self.decoder = RefRNNDecoder.from_opt(opt, self.embed)
+            self.encoder = RefRNNEncoder.from_opt(opt, self.encoder_embed)
+            self.decoder = RefRNNDecoder.from_opt(opt, self.decoder_embed)
         if self.use_contextNTM:
             print("Use old ntm model!")
             # self.topic_model = ContextNTM(opt, bert_size=opt.encoder_size * self.num_directions)
@@ -49,7 +49,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         self.W = nn.Parameter(torch.Tensor(opt.encoder_size * self.num_directions))
         self.tanh = nn.Tanh()
 
-    def forward(self, src, src_lens, trg, src_oov, max_num_oov, src_mask, src_bow, query_emb=None, ref_input=None,
+    def forward(self, src, src_lens, trg=None, src_oov=None, max_num_oov=None, src_mask=None, src_bow=None, query_emb=None, ref_input=None,
                 begin_iterate_train_ntm=False, num_trgs=None, graph=None):
         """
         :param src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
@@ -70,10 +70,15 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         if self.encoder_attention:
             memory_bank, encoder_final_state, hidden_topic_state_bank = self.encoder(src, src_lens,
                                                                                      self.topic_model.get_topic_embedding())
-        elif self.use_refs and ref_input is not None:
-            encoder_output, encoder_mask = self.encoder(src, src_lens, ref_docs,
-                                                        ref_lens, ref_doc_lens,
-                                                        begin_iterate_train_ntm=begin_iterate_train_ntm, graph=graph)
+        elif self.use_refs:
+            if ref_input is None:
+                encoder_output, encoder_mask = self.encoder(src, src_lens,
+                                                            begin_iterate_train_ntm=begin_iterate_train_ntm)
+            else:
+                encoder_output, encoder_mask = self.encoder(src, src_lens, ref_docs,
+                                                            ref_lens, ref_doc_lens,
+                                                            begin_iterate_train_ntm=begin_iterate_train_ntm,
+                                                            graph=graph)
             memory_bank, encoder_final_state, encoder_final_state_gat, ref_word_reps, ref_doc_reps = encoder_output
             ref_doc_mask, ref_word_mask = encoder_mask
             if ref_word_mask is not None and ref_word_mask is not None:
@@ -81,6 +86,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                 ref_word_mask = ref_word_mask.to(src.device)
         else:
             memory_bank, encoder_final_state = self.encoder(src, src_lens)
+            encoder_final_state_gat = encoder_final_state
             hidden_topic_state_bank = None
         assert memory_bank.size() == torch.Size([batch_size, max_src_len, self.num_directions * self.encoder_size])
         assert encoder_final_state.size() == torch.Size([batch_size, self.num_directions * self.encoder_size])
