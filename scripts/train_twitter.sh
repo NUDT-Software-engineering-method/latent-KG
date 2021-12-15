@@ -7,7 +7,7 @@ export CUDA_VISIBLE_DEVICES=0
 seeds=(
 10
 100
-5643
+5642
 8000
 #9572
 )

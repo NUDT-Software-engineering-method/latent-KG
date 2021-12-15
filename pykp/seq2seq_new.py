@@ -93,7 +93,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
 
         # 判断是否为使用预训练的向量作为主题模型的输入
         if query_emb is None:
-            topic_context = encoder_final_state
+            topic_context = encoder_final_state_gat
         else:
             topic_context = query_emb
         # Topic Model forward

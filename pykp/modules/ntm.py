@@ -69,6 +69,8 @@ class NTM(nn.Module):
         fw.close()
 
     def get_topic_words(self):
+        # fcd1.weight's shape [vocab_num, topic_num]
+        # fcd1.weight's T shape [topic_num, vocab_num]
         return self.fcd1.weight.T
 
 
@@ -125,8 +127,10 @@ class TopicEmbeddingNTM(ContextNTM):
     def get_topic_words(self):
         # word_embedding_d = self.dropout(self.word_embedding)
         # topic_words = torch.matmul(self.topic_embedding, word_embedding_d.T)
+        # [vocab_num ,topic_num]
         topic_words = self.topic_embedding_linear(self.word_embedding_linear.weight)
         topic_words = topic_words.transpose(1, 0)
+        # [topic_num, vocab_num]
         return topic_words
 
     def print_topic_words(self, vocab_dic, fn, n_top_words=15):

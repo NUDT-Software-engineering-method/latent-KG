@@ -122,14 +122,19 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
 def train_one_ntm(topic_seq2seq_model, dataloader, optimizer, opt, epoch):
     train_loss = 0
     for batch_idx, batch in enumerate(dataloader):
-        src, src_lens, src_bow = batch
+        src, src_lens, src_bow, ref_docs, ref_lens, ref_doc_lens, graph = batch
         src = src.to(opt.device)
         src_bow = src_bow.to(opt.device)
         # normalize data
         src_bow_norm = F.normalize(src_bow)
-
+        if opt.use_refs:
+            ref_docs = ref_docs.to(opt.device)
+            ref_doc_lens = ref_doc_lens.to(opt.device)
+        ref_input = ref_docs, ref_lens, ref_doc_lens, None
         optimizer.zero_grad()
-        seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, src_bow=src_bow_norm, begin_iterate_train_ntm=True)
+        seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, src_bow=src_bow_norm,
+                                                                 ref_input=ref_input,
+                                                                 begin_iterate_train_ntm=True, graph=graph)
         decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
         if opt.use_contextNTM:
             topic_represent, topic_represent_drop, recon_batch, post_mu, post_logvar = topic_model_output
@@ -153,6 +158,7 @@ def train_one_ntm(topic_seq2seq_model, dataloader, optimizer, opt, epoch):
 
     logging.info('====>Train epoch: {} Average loss: {:.4f}'.format(
         epoch, train_loss / len(dataloader.dataset)))
+    # need [bow_vocab, topic_num]
     sparsity = check_sparsity(topic_seq2seq_model.topic_model.get_topic_words().T)
     logging.info(
         "Overall sparsity = %.3f, l1 strength = %.5f" % (sparsity, topic_seq2seq_model.topic_model.l1_strength))
@@ -297,12 +303,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
     report_valid_loss = []
     best_valid_ppl = float('inf')
     best_valid_loss = float('inf')
-    best_ntm_valid_loss = float('inf')
-    joint_train_patience = 1
-    ntm_train_patience = 1
-    global_patience = 5
     num_stop_dropping = 0
-    num_stop_dropping_ntm = 0
     num_stop_dropping_global = 0
 
     t0 = time.time()
@@ -367,8 +368,9 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                         print("Train: %d/%d batches, current avg loss: %.3f" %
                               ((batch_i + 1), len(train_data_loader), batch_loss_stat.xent()))
 
-                    current_train_ppl = report_train_loss_statistics.ppl()
-                    current_train_loss = report_train_loss_statistics.xent()
+                current_train_ppl = report_train_loss_statistics.ppl()
+                current_train_loss = report_train_loss_statistics.xent()
+                writer.add_scalar('Train/total_loss', current_train_loss, epoch)
                 # test the model on the validation dataset for one epoch
                 valid_loss_stat = evaluate_loss(valid_data_loader, topicSeq2Seq_model, opt)
                 current_valid_loss = valid_loss_stat.xent()
@@ -404,16 +406,15 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 else:
                     print("Valid loss does not drop")
                     sys.stdout.flush()
-                    if not begin_iterate_train_ntm:
-                        num_stop_dropping += 1
-                        num_stop_dropping_global += 1
-                        # decay the learning rate by a factor
-                        for i, param_group in enumerate(optimizer.param_groups):
-                            old_lr = float(param_group['lr'])
-                            new_lr = old_lr * opt.learning_rate_decay
-                            if old_lr - new_lr > EPS:
-                                param_group['lr'] = new_lr
-                                print("The new learning rate for seq2seq is decayed to %.6f" % new_lr)
+                    num_stop_dropping += 1
+                    num_stop_dropping_global += 1
+                    # decay the learning rate by a factor
+                    for i, param_group in enumerate(optimizer.param_groups):
+                        old_lr = float(param_group['lr'])
+                        new_lr = old_lr * opt.learning_rate_decay
+                        if old_lr - new_lr > EPS:
+                            param_group['lr'] = new_lr
+                            print("The new learning rate for seq2seq is decayed to %.6f" % new_lr)
 
                 if opt.save_each_epoch:
                     check_pt_model_path = os.path.join(opt.model_path, 'e%d.train_loss=%.3f.val_loss=%.3f.model-%s' %

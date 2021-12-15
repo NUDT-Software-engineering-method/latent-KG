@@ -47,6 +47,7 @@ def train_ntm_one_epoch(model, dataloader, optimizer, opt, epoch):
         optimizer.zero_grad()
         _, _, recon_batch, mu, logvar = model(data_bow_norm)
         loss = loss_function(recon_batch, data_bow, mu, logvar)
+        # fcd1 weight's shape is [vocab_size, topic_num]
         loss = loss + model.l1_strength * l1_penalty(model.fcd1.weight)
         loss.backward()
         train_loss += loss.item()
