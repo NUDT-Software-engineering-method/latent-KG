@@ -329,7 +329,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 topicSeq2Seq_model.topic_model.train()
                 fix_model_seq2seq_decoder(topicSeq2Seq_model)
                 logging.info("\nTraining ntm epoch: {}/{}".format(epoch, opt.epochs))
-                if last_train_ntm_epoch > 50:
+                if last_train_ntm_epoch > opt.ntm_warm_up_epochs:
                     begin_iterate_train_ntm = False
                     # 仅使用生成的Loss更新WW
                     opt.add_two_loss = False

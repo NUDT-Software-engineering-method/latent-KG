@@ -81,6 +81,7 @@ class ContextNTM(NTM):
         super(ContextNTM, self).__init__(opt, hidden_dim, l1_strength)
         self.fc11 = nn.Linear(bert_size + self.input_dim, hidden_dim)
         self.adapt_layer = nn.Linear(bert_size, self.input_dim)
+        self.dropout = nn.Dropout()
 
     def encode(self, x, latent_state):
         x_ = x
@@ -88,6 +89,7 @@ class ContextNTM(NTM):
         e1 = F.relu(self.fc11(x))
         e1 = F.relu(self.fc12(e1))
         e1 = e1.add(self.fcs(x_))
+        e1 = self.dropout(e1)
         return self.fc21(e1), self.fc22(e1)
 
     def forward(self, x, latent_state):
