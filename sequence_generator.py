@@ -39,7 +39,6 @@ class SequenceGenerator(object):
                  n_best=None,
                  block_ngram_repeat=0,
                  ignore_when_blocking=[],
-                 use_topic_words=False,
                  use_encoder_attention=False
                  ):
         """Initializes the generator.
@@ -77,7 +76,6 @@ class SequenceGenerator(object):
         self.review_attn = review_attn
         self.block_ngram_repeat = block_ngram_repeat
         self.ignore_when_blocking = ignore_when_blocking
-        self.use_topic_words = use_topic_words
         self.encoder_attention = use_encoder_attention
         if n_best is None:
             self.n_best = self.beam_size
@@ -198,16 +196,12 @@ class SequenceGenerator(object):
 
             # run one step of decoding
             # [flattened_batch, vocab_size], [dec_layers, flattened_batch, decoder_size], [flattened_batch, memory_bank_size], [flattened_batch, src_len], [flattened_batch, src_len]
-            if self.use_topic_words:
-                decoder_dist, decoder_state, context, attn_dist, _, coverage = \
-                    self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank,
-                                       hidden_topic_state_memory, src_mask,
-                                       max_num_oov,
-                                       src_oov, coverage, topic_embedding=self.ntm_model.get_topic_embedding())
-            else:
-                decoder_dist, decoder_state, context, attn_dist, _, coverage = \
-                    self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank, src_mask,
-                                       max_num_oov, src_oov, coverage, topic_embedding=self.ntm_model.get_topic_embedding())
+
+            decoder_dist, decoder_state, context, attn_dist, _, coverage = \
+                self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank, src_mask,
+                                   max_num_oov, src_oov, coverage,
+                                   topic_embedding=self.ntm_model.get_topic_embedding())
+
             log_decoder_dist = torch.log(decoder_dist + EPS)
 
             if self.review_attn:
@@ -264,8 +258,6 @@ class SequenceGenerator(object):
                 topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, topic_context)
             else:
                 _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, topic_context)
-
-            topic_represent = topic_represent.repeat(self.beam_size, 1)  # [batch * beam_size, topic_num]
         else:
             topic_represent = None
 
@@ -289,23 +281,35 @@ class SequenceGenerator(object):
         else:
             decoder_memory_bank = None
 
+        if self.encoder_attention:
+            topic_mean_hidden, topic_max_hidden, hidden_topic_state = self.model.topic_attention(memory_bank,
+                                                                                                 self.ntm_model.get_topic_embedding(),
+                                                                                                 topic_represent,
+                                                                                                 src_mask)
+            input_doc = topic_mean_hidden
+            hidden_doc = torch.zeros((batch_size, self.model.encoder_dim)).to(src.device)
+
         # expand memory_bank, src_mask
+        if self.use_topic_represent:
+            topic_represent = topic_represent.repeat(self.beam_size, 1)  # [batch * beam_size, topic_num]
+
         memory_bank = memory_bank.repeat(beam_size, 1, 1)  # [batch * beam_size, max_src_len, memory_bank_size]
         src_mask = src_mask.repeat(beam_size, 1)  # [batch * beam_size, src_seq_len]
         src_oov = src_oov.repeat(self.beam_size, 1)  # [batch * beam_size, src_seq_len]
         decoder_state = decoder_init_state.repeat(1, self.beam_size,
                                                   1)  # [dec_layers, batch_size * beam_size, decoder_size]
-        # print("Size: ref_word_reps:{}, ref_doc_reps:{}, ref_oovs:{}, ref_doc_mask:{}, ref_word_mask:{}".format(
-        #     ref_word_reps.size(), ref_doc_reps.size(), ref_oovs.size(), ref_doc_mask.size(), ref_word_mask.size()
-        # ))
         # ref_docs, ref_lens, ref_doc_lens, ref_oovs
         ref_word_reps = ref_word_reps.repeat(beam_size, 1, 1,
                                              1)  # [batch * beam_size, ref_nums, max_src_len, memory_bank_size]
         ref_doc_reps = ref_doc_reps.repeat(beam_size, 1, 1)  # [batch * beam_size, ref_nums, memory_bank_size]
         ref_oovs = ref_oovs.repeat(beam_size, 1, 1)  # [batch * beam_size, ref_nums, max_src_len]
         ref_doc_mask = ref_doc_mask.repeat(beam_size, 1)  # [batch * beam_size, ref_nums]
-        ref_word_mask = ref_word_mask.repeat(beam_size, 1, 1)  # # [batch * beam_size, ref_nums, max_src_len]
+        ref_word_mask = ref_word_mask.repeat(beam_size, 1, 1)  # [batch * beam_size, ref_nums, max_src_len]
         # exclusion_list = ["<t>", "</t>", "."]
+        if self.encoder_attention:
+            input_doc = input_doc.repeat(beam_size, 1)
+            hidden_doc = hidden_doc.repeat(beam_size, 1)
+            hidden_topic_state = hidden_topic_state.repeat(beam_size, 1, 1)
 
         exclusion_tokens = set([word2idx[t] for t in self.ignore_when_blocking])
 
@@ -346,7 +350,17 @@ class SequenceGenerator(object):
 
             # Convert the generated eos token to bos token, only useful in one2many_mode=2 or one2many_mode=3
             decoder_input = decoder_input.masked_fill(decoder_input == self.eos_idx, self.bos_idx)
-
+            if self.encoder_attention:
+                # doc_hidden, topic_dist = self.model.doc_topic_decoder(input_doc, hidden_doc)
+                # 计算加权的context表示
+                # topic_dist = topic_dist.unsqueeze(dim=1)
+                # topic_mean_hidden = torch.matmul(topic_dist, hidden_topic_state)  # [batch_size, 1, hidden_state]
+                # topic_mean_hidden = topic_mean_hidden.squeeze(dim=1)
+                h_0_sent = input_doc
+            else:
+                topic_mean_hidden = None
+                doc_hidden = None
+                h_0_sent = None
             # run one step of decoding
             # [flattened_batch, vocab_size], [dec_layers, flattened_batch, decoder_size], [flattened_batch, memory_bank_size], [flattened_batch, src_len], [flattened_batch, src_len]
             decoder_dist, decoder_state, context, attn_dist, p_gen, coverage = self.model.decoder(decoder_input,
@@ -359,7 +373,8 @@ class SequenceGenerator(object):
                                                                                                   ref_doc_reps,
                                                                                                   ref_word_mask,
                                                                                                   ref_doc_mask,
-                                                                                                  ref_oovs)
+                                                                                                  ref_oovs,
+                                                                                                  topic_post_hidden=h_0_sent)
             log_decoder_dist = torch.log(decoder_dist + EPS)
 
             if self.review_attn:
@@ -374,6 +389,9 @@ class SequenceGenerator(object):
             for batch_idx, beam in enumerate(beam_list):
                 beam.advance(log_decoder_dist[:, batch_idx], attn_dist[:, batch_idx, :src_lens[batch_idx]])
                 self.beam_decoder_state_update(batch_idx, beam.get_current_origin(), decoder_state, decoder_memory_bank)
+
+            # input_doc = input_doc
+            # hidden_doc = doc_hidden
 
         # Extract sentences from beam.
         result_dict = self._from_beam(beam_list)

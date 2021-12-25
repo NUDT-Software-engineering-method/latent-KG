@@ -367,8 +367,9 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                         print("Train: %d/%d batches, current avg loss: %.3f" %
                               ((batch_i + 1), len(train_data_loader), batch_loss_stat.xent()))
 
-                    current_train_ppl = report_train_loss_statistics.ppl()
-                    current_train_loss = report_train_loss_statistics.xent()
+                current_train_ppl = report_train_loss_statistics.ppl()
+                current_train_loss = report_train_loss_statistics.xent()
+                writer.add_scalar('Train/toltal_loss', current_train_loss, epoch)
                 # test the model on the validation dataset for one epoch
                 valid_loss_stat = evaluate_loss(valid_data_loader, topicSeq2Seq_model, opt)
                 current_valid_loss = valid_loss_stat.xent()

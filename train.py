@@ -100,9 +100,6 @@ def process_opt(opt):
         if opt.topic_attn_in:
             opt.exp += '.topic_attn_in'
 
-        if opt.topic_words:
-            opt.exp += '.topic_words'
-
         if opt.load_pretrain_ntm:
             has_topic_num = [t for t in opt.check_pt_ntm_model_path.split('.') if 'topic_num' in t]
             if len(has_topic_num) != 0:

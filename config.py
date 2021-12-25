@@ -53,7 +53,6 @@ def my_own_opts(parser):
     parser.add_argument('-topic_attn', default=False, action='store_true', help='add topic in context vector')
     parser.add_argument('-topic_copy', default=False, action='store_true', help='add topic in copy switch')
     parser.add_argument('-topic_attn_in', default=False, action='store_true', help='add topic in computing attn score')
-    parser.add_argument('-topic_words', default=False, action='store_true', help='add topic words in decoder')
     parser.add_argument('-encoder_attention', default=False, action='store_true', help='add attention layer in encoder')
     parser.add_argument('-topic_embedding', default=False, action='store_true',
                         help='add attention layer in topic_embedding in decoder')

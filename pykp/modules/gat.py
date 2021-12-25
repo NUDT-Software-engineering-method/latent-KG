@@ -21,6 +21,7 @@ class PositionwiseFeedForward(nn.Module):
         output = self.w_2(F.relu(self.w_1(output)))
         output = output.transpose(1, 2)
         output = self.dropout(output)
+        # 残差完之后再接层归一化
         output = self.layer_norm(output + residual)
         return output
 
@@ -56,9 +57,11 @@ class MultiHeadGATLayer(nn.Module):
         z = F.leaky_relu((self.attn_fc * z2).sum(dim=-1, keepdim=True))  # [edge_num, n_head, 1]
         return {'e': z}
 
+    # 传递消息的函数 汇总的信息
     def message_func(self, edges):
         return {'z': edges.src['z'], 'e': edges.data['e']}
 
+    # 聚合信息的函数
     def reduce_func(self, nodes):
         alpha = self.attn_drop(F.softmax(nodes.mailbox['e'], dim=1))
         h = torch.sum(alpha * nodes.mailbox['z'], dim=1)  # (node_num, n_head, out_dim)

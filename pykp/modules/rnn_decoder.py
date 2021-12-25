@@ -13,7 +13,8 @@ class RNNDecoder(nn.Module):
     def __init__(self, embed, vocab_size, embed_size, hidden_size, num_layers, memory_bank_size, coverage_attn,
                  copy_attn,
                  review_attn, pad_idx, attn_mode, dropout=0.0, use_topic_represent=False, topic_attn=False,
-                 topic_attn_in=False, topic_copy=False, topic_dec=False, topic_num=50, use_fusion_embed=False):
+                 topic_attn_in=False, topic_copy=False, topic_dec=False, topic_num=50, use_fusion_embed=False,
+                 encoder_attention=False):
         super(RNNDecoder, self).__init__()
         self.use_topic_represent = use_topic_represent
         self.topic_attn = topic_attn
@@ -34,15 +35,19 @@ class RNNDecoder(nn.Module):
         self.pad_token = pad_idx
 
         self.embedding = embed
+
         self.input_size = embed_size
 
         self.use_fusion_embed = use_fusion_embed
+        self.encoder_attention = encoder_attention
         if use_fusion_embed:
             self.lda2vec = Lda2Vec(self.embed_size, self.embed_size)
 
         if use_topic_represent:
             if topic_dec:
                 self.input_size = embed_size + topic_num
+        if encoder_attention:
+            self.input_size = embed_size + hidden_size
 
         self.rnn = nn.GRU(input_size=self.input_size, hidden_size=hidden_size, num_layers=num_layers,
                           bidirectional=False, batch_first=False, dropout=dropout)
@@ -87,7 +92,7 @@ class RNNDecoder(nn.Module):
             review_attn=opt.review_attn, pad_idx=opt.word2idx[pykp.io.PAD_WORD], attn_mode=opt.attn_mode,
             dropout=opt.dropout, use_topic_represent=opt.use_topic_represent, topic_attn=opt.topic_attn,
             topic_attn_in=opt.topic_attn_in, topic_copy=opt.topic_copy, topic_dec=opt.topic_dec,
-            topic_num=opt.topic_num, use_fusion_embed=opt.use_fusion_embed
+            topic_num=opt.topic_num, use_fusion_embed=opt.use_fusion_embed, encoder_attention=opt.encoder_attention
         )
 
     def forward(self, y, topic_represent, h, memory_bank, src_mask, max_num_oovs, src_oov, coverage,
@@ -335,14 +340,14 @@ class RefRNNDecoder(RNNDecoder):
     def __init__(self, embed, vocab_size, embed_size, hidden_size, num_layers, memory_bank_size, coverage_attn,
                  copy_attn,
                  review_attn, pad_idx, attn_mode, dropout=0.0, use_topic_represent=False, topic_attn=False,
-                 topic_attn_in=False, topic_copy=False, topic_dec=False, topic_num=50, use_fusion_embed=False):
+                 topic_attn_in=False, topic_copy=False, topic_dec=False, topic_num=50, use_fusion_embed=False, encoder_attention=False):
         super(RefRNNDecoder, self).__init__(embed, vocab_size, embed_size, hidden_size, num_layers, memory_bank_size,
                                             coverage_attn, copy_attn,
                                             review_attn, pad_idx, attn_mode, dropout=dropout,
                                             use_topic_represent=use_topic_represent,
                                             topic_attn=topic_attn,
                                             topic_attn_in=topic_attn_in, topic_copy=topic_copy, topic_dec=topic_dec,
-                                            topic_num=topic_num)
+                                            topic_num=topic_num, use_fusion_embed=use_fusion_embed, encoder_attention=encoder_attention)
         self.fusion_layer = nn.Sequential(
             nn.Linear(hidden_size * 2, 1),
             nn.Sigmoid()
@@ -352,7 +357,7 @@ class RefRNNDecoder(RNNDecoder):
         self.ref_attention_layer = HierAttention(hidden_size, hidden_size, topic_num)
 
     def forward(self, y, topic_represent, h, memory_bank, src_mask, max_num_oovs, src_oov, coverage, ref_word_reps,
-                ref_doc_reps, ref_word_mask, ref_doc_mask, ref_oovs=None, topic_embedding=None,):
+                ref_doc_reps, ref_word_mask, ref_doc_mask, ref_oovs=None, topic_embedding=None, topic_post_hidden=None):
         """
         :param y: [batch_size] 表示batch_size个样本在t时间步的单词序号
         :param h: [num_layers, batch_size, decoder_size]
@@ -379,8 +384,10 @@ class RefRNNDecoder(RNNDecoder):
 
         y_emb = y_emb.unsqueeze(0)  # [1, batch_size, embed_size]
 
-        if self.use_topic_represent and self.topic_dec:
+        if self.use_topic_represent and self.topic_dec and self.encoder_attention is False:
             rnn_input = torch.cat([y_emb, topic_represent.unsqueeze(0)], dim=2)
+        elif self.encoder_attention and topic_post_hidden is not None:
+            rnn_input = torch.cat([y_emb, topic_post_hidden.unsqueeze(0)], dim=2)
         else:
             rnn_input = y_emb
         # 这里将embedding 和Topic embedding一起输入rnn

@@ -152,6 +152,7 @@ class Attention(nn.Module):
 
         return context, attn_dist, coverage
 
+
 class TopicAttention(nn.Module):
     def __init__(self, decoder_size, memory_bank_size, coverage_attn, attn_mode, topic_num):
         super(TopicAttention, self).__init__()
@@ -165,6 +166,7 @@ class TopicAttention(nn.Module):
         self.coverage_attn = coverage_attn
         if coverage_attn:
             self.coverage_project = nn.Linear(1, decoder_size, bias=False)
+        # mask防止padding的获取attention
         self.softmax = MaskedSoftmax(dim=1)
         # self.softmax = nn.Softmax(dim=1)
         self.tanh = nn.Tanh()
@@ -272,13 +274,15 @@ class TopicAttention(nn.Module):
 
         return context, attn_dist, coverage
 
+
 class ContextTopicAttention(nn.Module):
     """
      参考SCI的论文 编码器和主题嵌入 进行双向Attention
+     注意要考虑mask的信息
     """
+
     def __init__(self, encoder_hidden_size, topic_num, topic_emb_dim, threshold=0.15):
         super(ContextTopicAttention, self).__init__()
-        assert encoder_hidden_size == topic_emb_dim
         self.encoder_hidden_size = encoder_hidden_size
         self.topic_num = topic_num
         self.topic_emb_dim = topic_emb_dim
@@ -286,7 +290,7 @@ class ContextTopicAttention(nn.Module):
         nn.init.xavier_uniform_(self.W)
         self.topic_threshold = threshold
 
-    def forward(self, encoder_memory, attention_dist, topic_emb, topic_dist):
+    def forward(self, encoder_memory, topic_emb, topic_dist, src_mask):
         """
             encoder_memory: [batch_size,seq_len,hidden_dim]
             attention_dist: [batch_size, seq_len]
@@ -300,8 +304,11 @@ class ContextTopicAttention(nn.Module):
 
         topic_seq_w = torch.matmul(self.W, topic_emb.T)  # [hidden_size, topic_num]
         seq_topic_w_origin = torch.matmul(encoder_memory, topic_seq_w)  # [batch_size, seq, topic_num]
+        # don't attention the padding
+        if src_mask is not None:
+            seq_topic_w_origin.masked_fill_(src_mask.eq(0).unsqueeze(dim=2), float('-inf'))
 
-        topic_seq_w = F.softmax(seq_topic_w_origin, dim=1).permute(0, 2, 1)  # [batch_size, topic_num, seq]
+        topic_seq_w = F.softmax(seq_topic_w_origin.permute(0, 2, 1), dim=2)  # [batch_size, topic_num, seq]
         topic_hidden_state = torch.matmul(topic_seq_w, encoder_memory)  # [batch_size, topic_num, hidden_state]
 
         # 计算加权的context表示
@@ -317,7 +324,8 @@ class ContextTopicAttention(nn.Module):
         seq_topic_w = F.softmax(seq_topic_w_origin, dim=2)  # [batch_size, seq, topic_num]
         hidden_topic_state = torch.matmul(seq_topic_w, topic_emb)  # [batch_size, seq, topic_embedding_size]
 
-        return topic_mean_hidden, topic_max_hidden, hidden_topic_state
+        return topic_mean_hidden, topic_max_hidden, topic_hidden_state
+
 
 class TopicEmbeddingAttention(nn.Module):
     """
@@ -350,6 +358,7 @@ class TopicEmbeddingAttention(nn.Module):
         hidden_topic_state = torch.matmul(seq_topic_w, topic_emb)  # [batch_size, seq, topic_embedding_size]
 
         return hidden_topic_state
+
 
 class TopicMemeoryMechanism(nn.Module):
     def __init__(self, topic_num, bow_size, embed_size):

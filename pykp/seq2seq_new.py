@@ -7,9 +7,11 @@ import torch
 import torch.nn as nn
 from pykp.model import Seq2SeqModel
 from pykp.context_topic_model.decoding_network import DecoderNetwork
+from pykp.modules.attention_modules import ContextTopicAttention
 from pykp.modules.ntm import TopicEmbeddingNTM
 from pykp.modules.rnn_decoder import RNNDecoderTW, RefRNNDecoder
 from pykp.modules.rnn_encoder import AttentionRNNEncoder, RefRNNEncoder
+from pykp.modules.topic_selector import DocumentTopicDecoder
 
 
 class TopicSeq2SeqModel(Seq2SeqModel):
@@ -18,22 +20,16 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         self.topic_type = opt.topic_type
         self.use_contextNTM = opt.use_contextNTM
         self.encoder_attention = opt.encoder_attention
-
-        if opt.encoder_attention:
-            self.encoder = AttentionRNNEncoder.from_opt(opt, self.encoder_embed)
-        self.topic_words = opt.topic_words
-        if opt.topic_words:
-            self.decoder = RNNDecoderTW.from_opt(opt, self.decoder_embed)
         self.use_refs = opt.use_refs
         self.use_pretrained = opt.use_pretrained
-
+        self.encoder_dim = opt.encoder_size * self.num_directions
         if opt.use_refs:
             self.encoder = RefRNNEncoder.from_opt(opt, self.encoder_embed)
             self.decoder = RefRNNDecoder.from_opt(opt, self.decoder_embed)
         if self.use_contextNTM:
             print("Use old ntm model!")
             # self.topic_model = ContextNTM(opt, bert_size=opt.encoder_size * self.num_directions)
-            bert_size = opt.encoder_size * self.num_directions
+            bert_size = self.encoder_dim
             if opt.use_pretrained:
                 bert_size = 768
             self.topic_model = TopicEmbeddingNTM(opt, bert_size=bert_size)
@@ -41,15 +37,22 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         else:
             print("Use new ntm model!")
             self.topic_model = DecoderNetwork(vocab_size=opt.bow_vocab_size,
-                                              bert_size=opt.encoder_size * self.num_directions, infnet="combined",
+                                              bert_size=self.encoder_dim, infnet="combined",
                                               num_topics=opt.topic_num, model_type="prodLDA", hidden_sizes=(100, 100),
                                               activation="softplus", dropout=opt.dropout, learn_priors=True)
 
-        # 注意力机制
-        self.W = nn.Parameter(torch.Tensor(opt.encoder_size * self.num_directions))
-        self.tanh = nn.Tanh()
+        self.topic_num = opt.topic_num
+        # 主题注意力机制
+        if opt.encoder_attention:
+            self.topic_attention = ContextTopicAttention(encoder_hidden_size=self.encoder_dim,
+                                                         topic_num=opt.topic_num,
+                                                         topic_emb_dim=opt.word_vec_size)
 
-    def forward(self, src, src_lens, trg=None, src_oov=None, max_num_oov=None, src_mask=None, src_bow=None, query_emb=None, ref_input=None,
+            self.doc_topic_decoder = DocumentTopicDecoder(dim_h=self.encoder_dim,
+                                                          num_topics=opt.topic_num)
+
+    def forward(self, src, src_lens, trg=None, src_oov=None, max_num_oov=None, src_mask=None, src_bow=None,
+                query_emb=None, ref_input=None,
                 begin_iterate_train_ntm=False, num_trgs=None, graph=None):
         """
         :param src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
@@ -66,11 +69,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         if ref_input is not None:
             ref_docs, ref_lens, ref_doc_lens, ref_oovs = ref_input
 
-        # Encoding
-        if self.encoder_attention:
-            memory_bank, encoder_final_state, hidden_topic_state_bank = self.encoder(src, src_lens,
-                                                                                     self.topic_model.get_topic_embedding())
-        elif self.use_refs:
+        if self.use_refs:
             if ref_input is None:
                 encoder_output, encoder_mask = self.encoder(src, src_lens,
                                                             begin_iterate_train_ntm=begin_iterate_train_ntm)
@@ -111,8 +110,16 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         else:
             topic_latent = topic_represent_g
 
+        # print(torch.argmax(topic_latent, dim=1)[:15])
         # 只训练主题模型 无需进行解码
         if not begin_iterate_train_ntm:
+            # use bi-attention module
+            if self.encoder_attention and self.use_contextNTM:
+                topic_mean_hidden, topic_max_hidden, hidden_topic_state = self.topic_attention(memory_bank,
+                                                                                               self.topic_model.get_topic_embedding(),
+                                                                                               topic_latent, src_mask)
+                input_doc = topic_mean_hidden
+                hidden_doc = torch.zeros((batch_size, self.encoder_dim)).to(src.device)
             h_t_init = self.init_decoder_state(encoder_final_state_gat)  # [dec_layers, batch_size, decoder_size]
             max_target_length = trg.size(1)
 
@@ -136,14 +143,18 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                 else:
                     h_t = h_t_next
                     y_t = y_t_next
-                if self.topic_words and self.encoder_attention:
-                    # decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
-                    #     self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage,
-                    #                  self.topic_model.get_topic_words())
-                    decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
-                        self.decoder(y_t, topic_latent, h_t, memory_bank, hidden_topic_state_bank, src_mask,
-                                     max_num_oov, src_oov, coverage, topic_embedding=self.topic_model.get_topic_embedding())
-                elif self.use_refs and ref_input is not None:
+                if self.encoder_attention:
+                    # doc_hidden, topic_dist = self.doc_topic_decoder(input_doc, hidden_doc)
+                    # 计算加权的context表示
+                    # topic_dist = topic_dist.unsqueeze(dim=1)
+                    # topic_mean_hidden = torch.matmul(topic_dist, hidden_topic_state)  # [batch_size, 1, hidden_state]
+                    # topic_mean_hidden = topic_mean_hidden.squeeze(dim=1)
+                    h_0_sent = topic_mean_hidden
+                else:
+                    topic_mean_hidden = None
+                    doc_hidden = None
+                    h_0_sent = None
+                if self.use_refs and ref_input is not None:
                     decoder_dist, h_t_next, context, attn_dist, p_gen, coverage = self.decoder(y_t, topic_latent, h_t,
                                                                                                memory_bank, src_mask,
                                                                                                max_num_oov,
@@ -151,17 +162,22 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                                                                                                ref_word_reps,
                                                                                                ref_doc_reps,
                                                                                                ref_word_mask,
-                                                                                               ref_doc_mask, ref_oovs, topic_embedding=self.topic_model.get_topic_embedding())
+                                                                                               ref_doc_mask, ref_oovs,
+                                                                                               topic_embedding=self.topic_model.get_topic_embedding(),
+                                                                                               topic_post_hidden=h_0_sent)
 
                 else:
                     decoder_dist, h_t_next, _, attn_dist, p_gen, coverage = \
-                        self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage, topic_embedding=self.topic_model.get_topic_embedding())
+                        self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage,
+                                     topic_embedding=self.topic_model.get_topic_embedding())
 
-                decoder_dist_all.append(decoder_dist.unsqueeze(1))  # [batch, 1, vocab_size]
-                attention_dist_all.append(attn_dist.unsqueeze(1))  # [batch, 1, src_seq_len]
+                decoder_dist_all.append(decoder_dist.unsqueeze(1))      # [batch, 1, vocab_size]
+                attention_dist_all.append(attn_dist.unsqueeze(1))       # [batch, 1, src_seq_len]
                 if self.coverage_attn:
-                    coverage_all.append(coverage.unsqueeze(1))  # [batch, 1, src_seq_len]
+                    coverage_all.append(coverage.unsqueeze(1))          # [batch, 1, src_seq_len]
                 y_t_next = trg[:, t]  # [batch]
+                # input_doc = topic_mean_hidden
+                # hidden_doc = doc_hidden
 
             decoder_dist_all = torch.cat(decoder_dist_all, dim=1)  # [batch_size, trg_len, vocab_size]
             attention_dist_all = torch.cat(attention_dist_all, dim=1)  # [batch_size, trg_len, src_len]
