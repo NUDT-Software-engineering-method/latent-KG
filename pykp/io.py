@@ -103,7 +103,16 @@ class KeyphraseDataset(torch.utils.data.Dataset):
             src = [b['src'] + [self.word2idx[EOS_WORD]] for b in batches]
         src, src_lens, src_mask = self._pad(src)
         src_bow = [b['src_bow'] for b in batches]
-        return src, src_lens,  self._pad_bow(src_bow)
+        # ref docs
+        if self.use_multidoc_graph:
+            ref_docs = [b['ref_docs'] for b in batches]
+            from retrievers.utils import build_graph
+            graph = [build_graph(**b['graph']) for b in batches]
+            ref_docs, ref_lens, ref_doc_lens = self._pad2d(ref_docs)
+
+        else:
+            ref_docs, graph, ref_lens, ref_doc_lens = None, None, None, None
+        return src, src_lens, self._pad_bow(src_bow), ref_docs, ref_lens, ref_doc_lens, graph
 
     def collate_fn_one2one(self, batches):
         '''
@@ -131,8 +140,8 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         src_bow = [b['src_bow'] for b in batches]
         # ref docs
         if self.use_multidoc_graph:
-            query_embeddings = [b['query_embedding'] for b in batches]
-            query_embeddings = torch.Tensor(query_embeddings)
+            # query_embeddings = [b['query_embedding'] for b in batches]
+            # query_embeddings = torch.Tensor(query_embeddings)
             ref_docs = [b['ref_docs'] for b in batches]
             if self.use_multidoc_copy:
                 assert batches[0]['ref_oov'] is not None, "set use_multidoc_copy in preprocess!"
@@ -161,7 +170,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         trg_oov, _, _ = self._pad(trg_oov)
         src_oov, _, _ = self._pad(src_oov)
         src_bow = self._pad_bow(src_bow)
-
+        query_embeddings = None
         return src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow, \
                ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_embeddings
 
@@ -247,8 +256,8 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         original_indices = list(range(batch_size))
         # get ref oovs
         if self.use_multidoc_graph:
-            query_embeddings = [b['query_embedding'] for b in batches]
-            query_embeddings = torch.Tensor(query_embeddings)
+            # query_embeddings = [b['query_embedding'] for b in batches]
+            # query_embeddings = torch.Tensor(query_embeddings)
             ref_docs = [b['ref_docs'] for b in batches]
             if self.use_multidoc_copy:
                 assert batches[0]['ref_oov'] is not None, "set use_multidoc_copy in preprocess!"
@@ -286,7 +295,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
             trg_lens, trg_mask = None, None
 
         src_bow = self._pad_bow(src_bow)
-
+        query_embeddings = None
         return src, src_lens, src_mask, src_oov, oov_lists, src_str, trg_str, trg, trg_oov, trg_lens, trg_mask, original_indices, src_bow, \
                ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_embeddings
 

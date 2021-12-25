@@ -151,38 +151,38 @@ class RefRNNEncoder(RNNEncoder):
                 graph=None):
         cur_word_rep, cur_doc_rep = self._forward(self.rnn, src, src_lens)
         cur_doc_rep_gat = None
-        if not begin_iterate_train_ntm:
-            packed_ref_docs_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_docs, ref_lens, batch_first=True,
-                                                                            enforce_sorted=False)
-            packed_doc_ref_lens_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_doc_lens, ref_lens,
-                                                                                batch_first=True, enforce_sorted=False)
+        # if not begin_iterate_train_ntm:
+        packed_ref_docs_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_docs, ref_lens, batch_first=True,
+                                                                        enforce_sorted=False)
+        packed_doc_ref_lens_by_ref_lens = nn.utils.rnn.pack_padded_sequence(ref_doc_lens, ref_lens,
+                                                                            batch_first=True, enforce_sorted=False)
 
-            packed_ref_word_reps, packed_ref_doc_reps = self._forward(self.rnn_ref, packed_ref_docs_by_ref_lens.data,
-                                                                      packed_doc_ref_lens_by_ref_lens.data.cpu())
-            ref_word_reps, _ = nn.utils.rnn.pad_packed_sequence(
-                nn.utils.rnn.PackedSequence(data=packed_ref_word_reps,
-                                            batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
-                                            sorted_indices=packed_ref_docs_by_ref_lens.sorted_indices,
-                                            unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
-                batch_first=True
-            )  # [batch, max_doc_num, max_doc_len, hidden_size]
-            ref_doc_reps, _ = nn.utils.rnn.pad_packed_sequence(
-                nn.utils.rnn.PackedSequence(data=packed_ref_doc_reps,
-                                            batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
-                                            sorted_indices=packed_ref_docs_by_ref_lens.sorted_indices,
-                                            unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
-                batch_first=True
-            )  # [batch, max_doc_num, hidden_size]
+        packed_ref_word_reps, packed_ref_doc_reps = self._forward(self.rnn_ref, packed_ref_docs_by_ref_lens.data,
+                                                                  packed_doc_ref_lens_by_ref_lens.data.cpu())
+        ref_word_reps, _ = nn.utils.rnn.pad_packed_sequence(
+            nn.utils.rnn.PackedSequence(data=packed_ref_word_reps,
+                                        batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
+                                        sorted_indices=packed_ref_docs_by_ref_lens.sorted_indices,
+                                        unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
+            batch_first=True
+        )  # [batch, max_doc_num, max_doc_len, hidden_size]
+        ref_doc_reps, _ = nn.utils.rnn.pad_packed_sequence(
+            nn.utils.rnn.PackedSequence(data=packed_ref_doc_reps,
+                                        batch_sizes=packed_ref_docs_by_ref_lens.batch_sizes,
+                                        sorted_indices=packed_ref_docs_by_ref_lens.sorted_indices,
+                                        unsorted_indices=packed_ref_docs_by_ref_lens.unsorted_indices),
+            batch_first=True
+        )  # [batch, max_doc_num, hidden_size]
 
-            if graph is not None:
-                assert graph is not None
-                all_doc_rep = torch.cat([cur_doc_rep.unsqueeze(1), ref_doc_reps], 1)
-                all_doc_rep = self.gat(graph, ref_lens + 1, all_doc_rep)
-                cur_doc_rep_gat = all_doc_rep[:, 0].contiguous()
-                ref_doc_reps = all_doc_rep[:, 1:].contiguous()
+        if graph is not None:
+            assert graph is not None
+            all_doc_rep = torch.cat([cur_doc_rep.unsqueeze(1), ref_doc_reps], 1)
+            all_doc_rep = self.gat(graph, ref_lens + 1, all_doc_rep)
+            cur_doc_rep_gat = all_doc_rep[:, 0].contiguous()
+            ref_doc_reps = all_doc_rep[:, 1:].contiguous()
 
-            ref_doc_mask = sequence_mask(ref_lens)
-            ref_word_mask = sequence_mask(ref_doc_lens)
-        else:
-            ref_word_reps, ref_doc_reps, ref_doc_mask, ref_word_mask = None, None, None, None
+        ref_doc_mask = sequence_mask(ref_lens)
+        ref_word_mask = sequence_mask(ref_doc_lens)
+        # else:
+        #     ref_word_reps, ref_doc_reps, ref_doc_mask, ref_word_mask = None, None, None, None
         return (cur_word_rep, cur_doc_rep, cur_doc_rep_gat, ref_word_reps, ref_doc_reps), (ref_doc_mask, ref_word_mask)
