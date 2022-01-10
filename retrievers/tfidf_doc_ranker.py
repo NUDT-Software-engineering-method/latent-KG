@@ -134,7 +134,7 @@ class TfidfDocRanker(object):
 
     def words_tfidf(self, query, k=20, word2idx=None, vocab_size=50002):
         tokens = self.tokenizer.tokenize(utils.normalize(query))
-        words = tokens.ngrams(n=1, uncased=True,filter_fn=utils.filter_ngram)
+        words = tokens.ngrams(n=1, uncased=True, filter_fn=utils.filter_ngram)
         wids2words = {utils.hash(w, self.hash_size): w for w in words}
         if len(wids2words) == 0:
             return {}
@@ -157,8 +157,9 @@ class TfidfDocRanker(object):
             o = np.argpartition(-tfidfs, k)[0:k]
             o_sort = o[np.argsort(-tfidfs[o])]
 
-
         # normalize score to integer between [0, 9]
-        words2tfidf = {word2idx[wids2words[wid]]: max(0, min(round(tfidf), 9)) for wid, tfidf in zip(wids_unique[o_sort], tfidfs[o_sort])
-                       if wids2words[wid] in word2idx and word2idx[wids2words[wid]] < vocab_size and wids2words[wid] not in stoplist}
+        words2tfidf = {word2idx[wids2words[wid]]: max(0, min(round(tfidf), 9)) for wid, tfidf in
+                       zip(wids_unique[o_sort], tfidfs[o_sort])
+                       if wids2words[wid] in word2idx and word2idx[wids2words[wid]] < vocab_size and wids2words[
+                           wid] not in stoplist}
         return words2tfidf

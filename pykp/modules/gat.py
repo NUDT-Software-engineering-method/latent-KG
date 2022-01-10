@@ -76,7 +76,9 @@ class MultiHeadGATLayer(nn.Module):
         src_h = self.feat_drop(src_h)
         z = self.fc(src_h).reshape(-1, self.n_head, self.out_dim)  # (node_num, n_head, out_dim)
         g.nodes[snode_id].data['z'] = z
+        # 通过指定函数更新边的特征
         g.apply_edges(self.edge_attention, edges=stedge_id)
+        # 指定的边类型从指定节点的前驱中提取消息，聚合它们以更新节点特征
         g.pull(tnode_id, self.message_func, self.reduce_func)
         g.ndata.pop('z')
         h = g.ndata.pop('h')[tnode_id].reshape(-1, self.n_head * self.out_dim)
@@ -177,14 +179,14 @@ class GAT(nn.Module):
         return g
 
     def forward(self, graph, batch_docs, doc_rep):
-        '''
+        """
         :param graph: [batch_size] * DGLGraph
         :param sent_rep: (batch_size, max(n_documents), max(sentences_per_document), input_size)
         :param doc_rep: (batch_size, max(n_documents), input_size)
         :param batch_docs: (batch_size, )
         :return:
             doc_rep: (batch_size, max(n_documents), input_size)
-        '''
+        """
         graph = dgl.batch([self.init_graph(g, d) for g, d in zip(graph, doc_rep)])
 
         wnode_id = graph.filter_nodes(lambda nodes: nodes.data["unit"] == 0)
@@ -192,6 +194,16 @@ class GAT(nn.Module):
 
         word_state = graph.nodes[wnode_id].data["embed"]
         doc_state = graph.nodes[dnode_id].data["init_feature"]
+
+        doc_nid = graph.filter_nodes(lambda nodes: nodes.data["dtype"] == 2)
+        # # 使用关键词加强文章信息
+        # for i in range(self.n_iter):
+        #     word_state = self.doc2word(graph, doc_state, word_state)
+        #     doc_state = self.word2doc(graph, word_state, doc_state)
+        #
+        # graph.nodes[dnode_id].data["hidden_state_word"] = doc_state
+        # doc_rep_word = graph.nodes[doc_nid].data["hidden_state_word"]
+        # doc_rep_word = stack_pad(doc_rep_word, batch_docs)
         for i in range(self.n_iter):
             word_state = self.doc2word(graph, doc_state, word_state)
             doc_state = self.word2doc(graph, word_state, doc_state)
@@ -199,7 +211,6 @@ class GAT(nn.Module):
 
         graph.nodes[dnode_id].data["hidden_state"] = doc_state
 
-        doc_nid = graph.filter_nodes(lambda nodes: nodes.data["dtype"] == 2)
         doc_rep = graph.nodes[doc_nid].data["hidden_state"]
         doc_rep = stack_pad(doc_rep, batch_docs)
 

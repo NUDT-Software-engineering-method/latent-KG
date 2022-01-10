@@ -57,7 +57,6 @@ def read_src_and_trg_files(src_file, trg_file, use_doc=True, use_kp=True):
 
 def get_node_edge(docs, w2d_score, d2d_score):
     """
-
     :param docs:
     :param w2d_score:
     :param d2d_score:
@@ -65,8 +64,10 @@ def get_node_edge(docs, w2d_score, d2d_score):
     """
     wid2wnid = {}
     w_id, d_idx = [], []
+
     w_d_wnid, w_d_dnid = [], []
     w_d_feat = {"score": [], 'dtype': []}
+
     d_d_dnid1, d_d_dnid2 = [], []
     d_d_feat = {"score": [], 'dtype': []}
     wnid, dnid = 0, 0

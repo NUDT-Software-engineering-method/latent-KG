@@ -116,9 +116,6 @@ def process_opt(opt):
     if opt.copy_attention:
         opt.exp += '.copy'
 
-    if opt.use_contextNTM:
-        opt.exp += '.useContextNTM'
-
     if opt.use_fusion_embed:
         opt.exp += ".fusion_emb"
 

@@ -6,40 +6,33 @@
 import torch
 import torch.nn as nn
 from pykp.model import Seq2SeqModel
-from pykp.context_topic_model.decoding_network import DecoderNetwork
+from pykp.modules.contrastive_loss import InstanceLoss
 from pykp.modules.attention_modules import ContextTopicAttention
 from pykp.modules.ntm import TopicEmbeddingNTM
 from pykp.modules.rnn_decoder import RNNDecoderTW, RefRNNDecoder
 from pykp.modules.rnn_encoder import AttentionRNNEncoder, RefRNNEncoder
 from pykp.modules.topic_selector import DocumentTopicDecoder
+from torch.nn import functional as F
 
 
 class TopicSeq2SeqModel(Seq2SeqModel):
     def __init__(self, opt):
         super(TopicSeq2SeqModel, self).__init__(opt)
         self.topic_type = opt.topic_type
-        self.use_contextNTM = opt.use_contextNTM
         self.encoder_attention = opt.encoder_attention
         self.use_refs = opt.use_refs
         self.use_pretrained = opt.use_pretrained
         self.encoder_dim = opt.encoder_size * self.num_directions
+        self.contra_loss = opt.con_loss
         if opt.use_refs:
             self.encoder = RefRNNEncoder.from_opt(opt, self.encoder_embed)
             self.decoder = RefRNNDecoder.from_opt(opt, self.decoder_embed)
-        if self.use_contextNTM:
-            print("Use old ntm model!")
-            # self.topic_model = ContextNTM(opt, bert_size=opt.encoder_size * self.num_directions)
-            bert_size = self.encoder_dim
-            if opt.use_pretrained:
-                bert_size = 768
-            self.topic_model = TopicEmbeddingNTM(opt, bert_size=bert_size)
-
-        else:
-            print("Use new ntm model!")
-            self.topic_model = DecoderNetwork(vocab_size=opt.bow_vocab_size,
-                                              bert_size=self.encoder_dim, infnet="combined",
-                                              num_topics=opt.topic_num, model_type="prodLDA", hidden_sizes=(100, 100),
-                                              activation="softplus", dropout=opt.dropout, learn_priors=True)
+        print("Use old ntm model!")
+        # self.topic_model = ContextNTM(opt, bert_size=opt.encoder_size * self.num_directions)
+        bert_size = self.encoder_dim
+        if opt.use_pretrained:
+            bert_size = 768
+        self.topic_model = TopicEmbeddingNTM(opt, bert_size=bert_size)
 
         self.topic_num = opt.topic_num
         # 主题注意力机制
@@ -50,6 +43,13 @@ class TopicSeq2SeqModel(Seq2SeqModel):
 
             self.doc_topic_decoder = DocumentTopicDecoder(dim_h=self.encoder_dim,
                                                           num_topics=opt.topic_num)
+
+        # contrastive-loss
+        if self.contra_loss:
+            self.contra_loss_function = InstanceLoss(opt.device, temperature=0.5)
+        # 注意力机制
+        self.W = nn.Parameter(torch.Tensor(opt.encoder_size * self.num_directions))
+        self.tanh = nn.Tanh()
 
     def forward(self, src, src_lens, trg=None, src_oov=None, max_num_oov=None, src_mask=None, src_bow=None,
                 query_emb=None, ref_input=None,
@@ -92,19 +92,15 @@ class TopicSeq2SeqModel(Seq2SeqModel):
 
         # 判断是否为使用预训练的向量作为主题模型的输入
         if query_emb is None:
-            topic_context = encoder_final_state_gat
+            topic_context = encoder_final_state
         else:
             topic_context = query_emb
         # Topic Model forward
-        if self.use_contextNTM:
-            topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance = self.topic_model(
-                src_bow,
-                topic_context)
-        else:
-            topic_represent, topic_represent_g, recon_x, (
-                posterior_mean, posterior_variance, posterior_log_variance), (
-                prior_mean, prior_variance) = self.topic_model(
-                src_bow, topic_context)
+
+        topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance = self.topic_model(
+            src_bow,
+            topic_context)
+
         if self.topic_type == 'z':
             topic_latent = topic_represent
         else:
@@ -125,7 +121,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
 
             decoder_dist_all = []
             attention_dist_all = []
-
+            decoder_memory_bank = []
             if self.coverage_attn:
                 coverage = torch.zeros_like(src, dtype=torch.float).requires_grad_()  # [batch, max_src_seq]
                 coverage_all = []
@@ -143,6 +139,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                 else:
                     h_t = h_t_next
                     y_t = y_t_next
+
                 if self.encoder_attention:
                     # doc_hidden, topic_dist = self.doc_topic_decoder(input_doc, hidden_doc)
                     # 计算加权的context表示
@@ -171,16 +168,21 @@ class TopicSeq2SeqModel(Seq2SeqModel):
                         self.decoder(y_t, topic_latent, h_t, memory_bank, src_mask, max_num_oov, src_oov, coverage,
                                      topic_embedding=self.topic_model.get_topic_embedding())
 
-                decoder_dist_all.append(decoder_dist.unsqueeze(1))      # [batch, 1, vocab_size]
-                attention_dist_all.append(attn_dist.unsqueeze(1))       # [batch, 1, src_seq_len]
+                decoder_dist_all.append(decoder_dist.unsqueeze(1))  # [batch, 1, vocab_size]
+                attention_dist_all.append(attn_dist.unsqueeze(1))  # [batch, 1, src_seq_len]
+                if self.contra_loss:
+                    decoder_memory_bank.append(h_t_next.squeeze(0).unsqueeze(1))  # h_t_next: [ batch, 1, decoder_size]
+
                 if self.coverage_attn:
-                    coverage_all.append(coverage.unsqueeze(1))          # [batch, 1, src_seq_len]
+                    coverage_all.append(coverage.unsqueeze(1))  # [batch, 1, src_seq_len]
                 y_t_next = trg[:, t]  # [batch]
                 # input_doc = topic_mean_hidden
                 # hidden_doc = doc_hidden
 
             decoder_dist_all = torch.cat(decoder_dist_all, dim=1)  # [batch_size, trg_len, vocab_size]
             attention_dist_all = torch.cat(attention_dist_all, dim=1)  # [batch_size, trg_len, src_len]
+            if self.contra_loss:
+                decoder_memory_bank = torch.cat(decoder_memory_bank, dim=1)  # [batch_size, trg_len, decoder_size]
             if self.coverage_attn:
                 coverage_all = torch.cat(coverage_all, dim=1)  # [batch_size, trg_len, src_len]
                 assert coverage_all.size() == torch.Size((batch_size, max_target_length, max_src_len))
@@ -191,20 +193,22 @@ class TopicSeq2SeqModel(Seq2SeqModel):
             else:
                 assert decoder_dist_all.size() == torch.Size((batch_size, max_target_length, self.vocab_size))
             assert attention_dist_all.size() == torch.Size((batch_size, max_target_length, max_src_len))
-            decoder_output = (
-                decoder_dist_all, h_t_next, attention_dist_all, encoder_final_state, coverage_all, None, None, None)
-            if self.use_contextNTM:
-                topic_output = (topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance)
-                return decoder_output, topic_output
+
+            if self.contra_loss:
+                masked_memory_bank = memory_bank.masked_fill(src_mask.eq(0).unsqueeze(dim=-1), 0)
+                # pool sentence
+                encoder_z = F.normalize(torch.mean(masked_memory_bank, dim=1), dim=1)
+                decoder_z = F.normalize(torch.mean(decoder_memory_bank, dim=1), dim=1)
+                contra_loss = self.contra_loss_function(encoder_z, decoder_z)
             else:
-                topic_out = (topic_represent, topic_represent_g, recon_x,
-                             (posterior_mean, posterior_variance, posterior_log_variance), (prior_mean, prior_variance))
-                return decoder_output, topic_out
-        decoder_output = (None, None, None, None, None, None, None, None)
-        if self.use_contextNTM:
+                contra_loss = None
+            decoder_output = (
+                decoder_dist_all, h_t_next, attention_dist_all, encoder_final_state, coverage_all, contra_loss,
+                None, None)
+
             topic_output = (topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance)
             return decoder_output, topic_output
-        else:
-            topic_out = (topic_represent, topic_represent_g, recon_x,
-                         (posterior_mean, posterior_variance, posterior_log_variance), (prior_mean, prior_variance))
-            return decoder_output, topic_out
+
+        decoder_output = (None, None, None, None, None, None, None, None)
+        topic_output = (topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance)
+        return decoder_output, topic_output

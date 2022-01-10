@@ -91,7 +91,7 @@ class ContextNTM(NTM):
         e1 = F.relu(self.fc11(x))
         e1 = F.relu(self.fc12(e1))
         e1 = e1.add(self.fcs(x_))
-        e1 = self.dropout(e1)
+        # e1 = self.dropout(e1)
         return self.fc21(e1), self.fc22(e1)
 
     def forward(self, x, latent_state):

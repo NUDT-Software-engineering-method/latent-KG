@@ -56,12 +56,14 @@ def my_own_opts(parser):
     parser.add_argument('-encoder_attention', default=False, action='store_true', help='add attention layer in encoder')
     parser.add_argument('-topic_embedding', default=False, action='store_true',
                         help='add attention layer in topic_embedding in decoder')
-    parser.add_argument('-use_refs', default=False, action='store_true', help='add ref docs layer in encoder and decoder')
+    parser.add_argument('-use_refs', default=False, action='store_true',
+                        help='add ref docs layer in encoder and decoder')
     parser.add_argument('-load_pretrain_ntm', default=False, action='store_true')
     parser.add_argument('-use_fusion_embed', default=False, action='store_true')
     parser.add_argument('-only_train_ntm', default=False, action='store_true')
     parser.add_argument('-check_pt_ntm_model_path', type=str)
     parser.add_argument('-ntm_warm_up_epochs', type=int, default=0)
+    parser.add_argument('-con_loss', default=False, action='store_true', help='use contrastive loss ')
 
     parser.add_argument('-target_sparsity', type=float, default=0.85,
                         help="Target sparsity for ntm model")
@@ -134,8 +136,6 @@ def model_opts(parser):
 
     # Cascading model options
     # if true use context by ntm if false use
-    parser.add_argument('-use_contextNTM', default=False, action='store_true',
-                        help="Whether use contextNTM.")
     parser.add_argument('-use_pretrained', default=False, action='store_true',
                         help="Whether use sentenceBert to topic model")
     # Graph Options
@@ -177,6 +177,7 @@ def vocab_opts(parser):
     parser.add_argument('-dynamic_dict', default=True,
                         action='store_true', help="Create dynamic dictionaries (for copy)")
     parser.add_argument('-use_tfidf', default=False, action='store_true', help="Whether to use a tfidf as bow src")
+
 
 def train_opts(parser):
     # Model loading/saving options

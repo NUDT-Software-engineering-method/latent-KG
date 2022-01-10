@@ -89,7 +89,7 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
             seq2seq_output, topic_model_output = topic_seq2seqModel(src, src_lens, trg, src_oov, max_num_oov, src_mask,
                                                                     src_bow_norm, query_emb=query_emb,
                                                                     ref_input=ref_input, graph=graph)
-            decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
+            decoder_dist, h_t, attention_dist, encoder_final_state, coverage, contra_loss, _, _ = seq2seq_output
             topic_represent, topic_represent_drop, recon_batch, mu, logvar = topic_model_output
 
             forward_time = time_since(start_time)
@@ -104,6 +104,8 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
                 loss = masked_cross_entropy(decoder_dist, trg, trg_mask, trg_lens,
                                             opt.coverage_attn, coverage, attention_dist, opt.lambda_coverage,
                                             coverage_loss=False)
+            if opt.con_loss:
+                loss += 0.8 * contra_loss
             loss_compute_time = time_since(start_time)
             loss_compute_time_total += loss_compute_time
 
@@ -122,30 +124,44 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
 def train_one_ntm(topic_seq2seq_model, dataloader, optimizer, opt, epoch):
     train_loss = 0
     for batch_idx, batch in enumerate(dataloader):
-        src, src_lens, src_bow = batch
+
+        # src, src_lens, src_bow, ref_docs, ref_lens, ref_doc_lens, graph = batch
+        src, src_lens, src_bow, trg_lens = batch
         src = src.to(opt.device)
         src_bow = src_bow.to(opt.device)
         # normalize data
         src_bow_norm = F.normalize(src_bow)
-
-        optimizer.zero_grad()
-        seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, src_bow=src_bow_norm, begin_iterate_train_ntm=True)
-        decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
-        if opt.use_contextNTM:
-            topic_represent, topic_represent_drop, recon_batch, post_mu, post_logvar = topic_model_output
-            loss = loss_function(recon_batch, src_bow, post_mu, post_logvar)
-            # loss = loss + topic_seq2seq_model.topic_model.l1_strength * l1_penalty(
-            #     topic_seq2seq_model.topic_model.get_topic_words().T)
+        total_trg_tokens = sum(trg_lens)
+        if opt.loss_normalization == "tokens":  # use number of target tokens to normalize the loss
+            normalization = total_trg_tokens
+        elif opt.loss_normalization == 'batches':  # use batch_size to normalize the loss
+            normalization = src.size(0)
         else:
-            topic_represent, topic_represent_drop, recon_batch, (post_mu, post_var, post_logvar), (
-                p_mu, p_var) = topic_model_output
-            loss = topic_modeling_loss(src_bow, opt.topic_num, recon_batch, p_mu, p_var, post_mu, post_var, post_logvar)
+            raise ValueError('The type of loss normalization is invalid.')
+
+        assert normalization > 0, 'normalization should be a positive number'
+        # ref_docs = ref_docs.to(opt.device)
+        # ref_doc_lens = ref_doc_lens.to(opt.device)
+        # ref_input = (ref_docs, ref_lens, ref_doc_lens, None)
+        optimizer.zero_grad()
+        seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, src_bow=src_bow_norm,
+                                                                 begin_iterate_train_ntm=True)
+        decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
+
+        topic_represent, topic_represent_drop, recon_batch, post_mu, post_logvar = topic_model_output
+        loss = loss_function(recon_batch, src_bow, post_mu, post_logvar)
+        # loss = loss + topic_seq2seq_model.topic_model.l1_strength * l1_penalty(
+        #     topic_seq2seq_model.topic_model.get_topic_words().T)
 
         loss.backward()
 
         train_loss += loss.item()
+        # if opt.max_grad_norm > 0:
+        #     # 裁剪的decoder和encoder 不包含主题模型
+        #     grad_norm_before_clipping = nn.utils.clip_grad_norm_(topic_seq2seq_model.parameters(), opt.max_grad_norm)
+
         optimizer.step()
-        if batch_idx % 100 == 0:
+        if batch_idx % 50 == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(src_bow), len(dataloader.dataset),
                        100. * batch_idx / len(dataloader),
@@ -197,15 +213,10 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, begin_i
                                                              ref_input=ref_input,
                                                              begin_iterate_train_ntm=begin_iterate_train_ntm,
                                                              graph=graph)
-    decoder_dist, h_t, attention_dist, encoder_final_state, coverage, _, _, _ = seq2seq_output
 
-    if opt.use_contextNTM:
-        topic_represent, topic_represent_drop, recon_batch, post_mu, post_logvar = topic_model_output
-        ntm_loss = loss_function(recon_batch, src_bow, post_mu, post_logvar)
-    else:
-        topic_represent, topic_represent_drop, recon_batch, (post_mu, post_var, post_logvar), (
-            p_mu, p_var) = topic_model_output
-        ntm_loss = topic_modeling_loss(src_bow, opt.topic_num, recon_batch, p_mu, p_var, post_mu, post_var, post_logvar)
+    decoder_dist, h_t, attention_dist, encoder_final_state, coverage, contra_loss, _, _ = seq2seq_output
+    topic_represent, topic_represent_drop, recon_batch, post_mu, post_logvar = topic_model_output
+    ntm_loss = loss_function(recon_batch, src_bow, post_mu, post_logvar)
 
     forward_time = time_since(start_time)
 
@@ -222,6 +233,8 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, begin_i
             loss = masked_cross_entropy(decoder_dist, trg, trg_mask, trg_lens,
                                         opt.coverage_attn, coverage, attention_dist, opt.lambda_coverage,
                                         opt.coverage_loss)
+        if opt.con_loss:
+            loss += 0.8 * contra_loss
     loss_compute_time = time_since(start_time)
 
     total_trg_tokens = sum(trg_lens)
@@ -272,7 +285,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, begin_i
     stat = LossStatistics(loss.item(), total_trg_tokens, n_batch=1, forward_time=forward_time,
                           loss_compute_time=loss_compute_time, backward_time=backward_time)
 
-    return stat
+    return stat, contra_loss
 
 
 def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole, train_data_loader, valid_data_loader,
@@ -313,6 +326,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
     last_train_ntm_epoch = 0
     last_train_joint_epoch = 0
     for epoch in range(opt.start_epoch, opt.epochs + 1):
+        contra_loss_epoch = 0
         if Train_Seq2seq:
             if epoch <= opt.p_seq2seq_e or not opt.joint_train:
                 optimizer = optimizer_ml
@@ -322,7 +336,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 logging.info("\nTraining seq2seq+ntm pre epoch: {}/{}".format(epoch, opt.epochs))
             elif begin_iterate_train_ntm:
                 last_train_ntm_epoch = last_train_ntm_epoch + 1
-                # loss add ntm loss
+                # optimizer = optimizer_ntm
                 opt.add_two_loss = True
                 optimizer = optimizer_ntm
                 topicSeq2Seq_model.train()
@@ -358,18 +372,22 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
             else:
                 for batch_i, batch in enumerate(train_data_loader):
                     total_batch += 1
-                    batch_loss_stat = train_one_batch(batch, topicSeq2Seq_model, optimizer, opt,
-                                                      total_batch, train_ntm)
+                    batch_loss_stat, contra_loss = train_one_batch(batch, topicSeq2Seq_model, optimizer, opt,
+                                                                   total_batch, train_ntm)
                     report_train_loss_statistics.update(batch_loss_stat)
                     total_train_loss_statistics.update(batch_loss_stat)
 
                     if (batch_i + 1) % (len(train_data_loader) // 10) == 0:
                         print("Train: %d/%d batches, current avg loss: %.3f" %
                               ((batch_i + 1), len(train_data_loader), batch_loss_stat.xent()))
+                    if contra_loss is not None:
+                        contra_loss_epoch += contra_loss.cpu().item()
 
                 current_train_ppl = report_train_loss_statistics.ppl()
                 current_train_loss = report_train_loss_statistics.xent()
-                writer.add_scalar('Train/toltal_loss', current_train_loss, epoch)
+                writer.add_scalar('Train/total_loss', current_train_loss, epoch)
+                if contra_loss is not None:
+                    writer.add_scalar('Train/contra_loss', contra_loss_epoch / (batch_i + 1), epoch)
                 # test the model on the validation dataset for one epoch
                 valid_loss_stat = evaluate_loss(valid_data_loader, topicSeq2Seq_model, opt)
                 current_valid_loss = valid_loss_stat.xent()
@@ -442,7 +460,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 report_valid_loss.append(current_valid_loss)
 
                 report_train_loss_statistics.clear()
-            if epoch % 10 == 0:
+            if epoch % 5 == 0:
                 # show topic words
                 topicSeq2Seq_model.topic_model.print_topic_words(bow_dictionary, os.path.join(opt.model_path,
                                                                                               'topwords_e%d.txt' % epoch))

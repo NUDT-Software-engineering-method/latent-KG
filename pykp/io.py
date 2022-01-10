@@ -104,15 +104,18 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         src, src_lens, src_mask = self._pad(src)
         src_bow = [b['src_bow'] for b in batches]
         # ref docs
-        if self.use_multidoc_graph:
-            ref_docs = [b['ref_docs'] for b in batches]
-            from retrievers.utils import build_graph
-            graph = [build_graph(**b['graph']) for b in batches]
-            ref_docs, ref_lens, ref_doc_lens = self._pad2d(ref_docs)
-
-        else:
-            ref_docs, graph, ref_lens, ref_doc_lens = None, None, None, None
-        return src, src_lens, self._pad_bow(src_bow), ref_docs, ref_lens, ref_doc_lens, graph
+        # if self.use_multidoc_graph:
+        #     ref_docs = [b['ref_docs'] for b in batches]
+        #     from retrievers.utils import build_graph
+        #     graph = [build_graph(**b['graph']) for b in batches]
+        #     ref_docs, ref_lens, ref_doc_lens = self._pad2d(ref_docs)
+        #
+        # else:
+        #     ref_docs, graph, ref_lens, ref_doc_lens = None, None, None, None
+        # target_input: input to decoder, ends with <eos> and oovs are replaced with <unk>
+        trg = [b['trg'] + [self.word2idx[EOS_WORD]] for b in batches]
+        trg, trg_lens, trg_mask = self._pad(trg)
+        return src, src_lens, self._pad_bow(src_bow), trg_lens
 
     def collate_fn_one2one(self, batches):
         '''

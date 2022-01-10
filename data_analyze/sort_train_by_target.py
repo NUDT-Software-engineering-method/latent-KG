@@ -4,7 +4,7 @@
 # @FileName: sort_train_by_target.py
 # @Software: PyCharm
 from collections import Counter
-
+import random
 from utils.string_helper import stem_word_list, stem_word_list
 
 
@@ -118,18 +118,60 @@ def get_key_not_in_train(trg_file1, trg_file2):
                 absent_key.append(trg)
         total_num += 1
     print("\n".join(absent_key))
-    print("The oov keyphrase's num is {}, rate is {}".format(len(absent_key), len(absent_key)/total_num))
+    print("The oov keyphrase's num is {}, rate is {}".format(len(absent_key), len(absent_key) / total_num))
+
+
+def output_keyphrase_map_posts(train_src_path, train_trg_path, out_file_path):
+    # key: 关键词 value:[]列表 保存关键词下的帖子
+    trg_src_dict = {}
+    for src_line, trg_line in zip(open(train_src_path, 'r'), open(train_trg_path, 'r')):
+        src_line = src_line.strip()
+
+        trg_list = trg_line.strip().split(';')
+        for trg in trg_list:
+            if trg not in trg_src_dict.keys():
+                trg_src_dict[trg] = []
+            trg_src_dict[trg].append(src_line)
+
+    def get_posts_score_to_key(keyphrase, post):
+        """
+        统计帖子包含关键词token的个数
+        """
+        trg_tokens = keyphrase.strip().split(" ")
+        trg_tokens = stem_word_list(trg_tokens)
+
+        post_tokens = post.strip().split(" ")
+        post_tokens = stem_word_list(post_tokens)
+        res = 0
+        for token in trg_tokens:
+            if token in post_tokens:
+                res += 1
+        return res
+
+    # sort and shuffle value list
+    trg_src_dict = {k: v for k, v in sorted(trg_src_dict.items(), key=lambda example: len(example[1]))}
+    out_file = open(out_file_path, "w")
+    for key, posts in trg_src_dict.items():
+        # 包含关键词的token多并且帖子长的排在前面
+        # posts = sorted(posts, key=lambda post: (get_posts_score_to_key(key, post), len(post)), reverse=True)
+        random.shuffle(posts)
+        posts = " ".join(posts)
+        out_file.write(key + "<trg> " + posts + '\n')
+    out_file.close()
 
 
 if __name__ == '__main__':
-    dataset_name = 'Twitter'
-    train_src = '../data/' + dataset_name + '/train_src.txt'
-    train_trg = '../data/' + dataset_name + '/train_trg.txt'
+    data_name_list = ['Twitter', 'Weibo', 'StackExchange']
+    for dataset_name in data_name_list:
+        train_src = '../data/' + dataset_name + '/train_src.txt'
+        train_trg = '../data/' + dataset_name + '/train_trg.txt'
 
-    valid_trg = '../data/' + dataset_name + '/valid_trg.txt'
-    test_trg = '../data/' + dataset_name + '/test_trg.txt'
+        valid_trg = '../data/' + dataset_name + '/valid_trg.txt'
+        test_trg = '../data/' + dataset_name + '/test_trg.txt'
 
-    out_path = '../data/' + dataset_name + '/sort_post_trg.txt'
-    # output_sorted_target(train_src, train_trg, out_path)
-    # merge_line_by_line(train_src, train_trg, out_path)
-    get_key_not_in_train(train_trg, test_trg)
+        out_path = '../data/' + dataset_name + '/sort_post_trg.txt'
+        out_path = '../data/' + dataset_name + '/trg_map_posts.txt'
+        # output_sorted_target(train_src, train_trg, out_path)
+        # merge_line_by_line(train_src, train_trg, out_path)
+        # get_key_not_in_train(train_trg, test_trg)
+        output_keyphrase_map_posts(train_src, train_trg, out_path)
