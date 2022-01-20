@@ -27,6 +27,8 @@ def process_opt(opt):
         torch.manual_seed(opt.seed)
         np.random.seed(opt.seed)
         random.seed(opt.seed)
+        torch.random.manual_seed(opt.seed)
+        torch.cuda.manual_seed_all(opt.seed)
 
     if torch.cuda.is_available() and not opt.gpuid:
         opt.gpuid = 0
@@ -50,6 +52,9 @@ def process_opt(opt):
         opt.word_vec_size = 150
     elif 'StackExchange' in opt.data_tag:
         opt.vocab_size = 50000
+        opt.word_vec_size = 150
+    elif 'kp20k' in opt.data_tag:
+        opt.vocab_size = 10000
         opt.word_vec_size = 150
     else:
         print('Wrong data_tag!!')

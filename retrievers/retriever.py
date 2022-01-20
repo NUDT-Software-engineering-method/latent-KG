@@ -5,7 +5,7 @@ import random
 class Retriever():
     def __init__(self, opt, word2idx, tag='train'):
         self.opt = opt
-        self.ref_docs = read_src_and_trg_files(opt.ref_doc_path, opt.ref_kp_path)
+        self.ref_docs = read_src_and_trg_files(opt.ref_doc_path, opt.ref_kp_path, max_src_len=opt.max_src_len)
         if opt.dense_retrieve:
             from retrievers.bert_doc_ranker import SBERTDocRanker
             self.ranker = SBERTDocRanker(opt, word2idx)
@@ -47,18 +47,19 @@ class Retriever():
         return ref_doc_texts_tokenized, graph_utils
 
     def batch_maybe_retrieving_building_graph(self, source, word2idx, vocab_size, is_train=False):
+        print("Retriever ref docs")
         if self.opt.n_ref_docs > 0:
             if self.opt.random_search:
                 batch_ref_doc_texts = random.sample(self.ref_docs, self.opt.n_ref_docs)
                 batch_ref_doc_scores = [1] * self.opt.n_ref_docs  # tmp value
             else:
                 if is_train:  # ignore the same doc
-                    batch_ref_docids, batch_ref_doc_scores, query_embedding = self.ranker.batch_closest_docs(source,
+                    batch_ref_docids, batch_ref_doc_scores = self.ranker.batch_closest_docs(source,
                                                                                                              k=self.opt.n_ref_docs + 1)
                     batch_ref_doc_scores = batch_ref_doc_scores[:, 1:]
                     batch_ref_docids = batch_ref_docids[:, 1:]
                 else:
-                    batch_ref_docids, batch_ref_doc_scores, query_embedding = self.ranker.batch_closest_docs(source,
+                    batch_ref_docids, batch_ref_doc_scores = self.ranker.batch_closest_docs(source,
                                                                                                              k=self.opt.n_ref_docs)
 
                 batch_ref_doc_texts = [[self.ref_docs[ref_docid] for ref_docid in ref_docids] for ref_docids in
@@ -68,7 +69,7 @@ class Retriever():
         else:
             batch_ref_doc_texts = None
             batch_ref_doc_texts_tokenized = None
-            query_embedding = None
+        print("Retriever keyphrases")
         # TODO:have bug
         if self.opt.n_topic_words > 0:
             batch_cur_tfidfs = self.ranker.batch_words_tfidf(source, self.opt.n_topic_words, word2idx)
@@ -87,4 +88,4 @@ class Retriever():
         else:
             graph_utils = None
 
-        return batch_ref_doc_texts_tokenized, graph_utils, query_embedding
+        return batch_ref_doc_texts_tokenized, graph_utils

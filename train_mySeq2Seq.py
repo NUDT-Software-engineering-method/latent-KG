@@ -54,7 +54,7 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
         for batch_i, batch in enumerate(data_loader):
             if not opt.one2many:  # load one2one dataset
                 src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow, \
-                ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_emb = batch
+                ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph = batch
             else:  # load one2many dataset
                 src, src_lens, src_mask, src_oov, oov_lists, src_str_list, trg_str_2dlist, trg, trg_oov, trg_lens, trg_mask, _ = batch
                 num_trgs = [len(trg_str_list) for trg_str_list in
@@ -78,17 +78,12 @@ def evaluate_loss(data_loader, topic_seq2seqModel, opt):
 
             src_bow = src_bow.to(opt.device)
             src_bow_norm = F.normalize(src_bow)
-            if opt.use_pretrained:
-                query_emb = query_emb.to(opt.device)
-            else:
-                query_emb = None
             start_time = time.time()
 
             # for one2one setting
             ref_input = (ref_docs, ref_lens, ref_doc_lens, ref_oovs)
             seq2seq_output, topic_model_output = topic_seq2seqModel(src, src_lens, trg, src_oov, max_num_oov, src_mask,
-                                                                    src_bow_norm, query_emb=query_emb,
-                                                                    ref_input=ref_input, graph=graph)
+                                                                    src_bow_norm, ref_input=ref_input, graph=graph)
             decoder_dist, h_t, attention_dist, encoder_final_state, coverage, contra_loss, _, _ = seq2seq_output
             topic_represent, topic_represent_drop, recon_batch, mu, logvar = topic_model_output
 
@@ -181,7 +176,7 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, begin_i
     # train for one batch
     #  begin_iterate_train_ntm whether train ntm only
     src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow, \
-    ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_embeds = batch
+    ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph = batch
     max_num_oov = max([len(oov) for oov in oov_lists])  # max number of oov for each batch
 
     # move data to GPU if available
@@ -203,13 +198,10 @@ def train_one_batch(batch, topic_seq2seq_model, optimizer, opt, batch_i, begin_i
     src_bow = src_bow.to(opt.device)
     src_bow_norm = F.normalize(src_bow)
     # src_bow_norm = src_bow / torch.sum(src_bow, dim=1, keepdim=True)
-    if opt.use_pretrained:
-        query_embeds = query_embeds.to(opt.device)
-    else:
-        query_embeds = None
+
     ref_input = (ref_docs, ref_lens, ref_doc_lens, ref_oovs)
     seq2seq_output, topic_model_output = topic_seq2seq_model(src, src_lens, trg, src_oov, max_num_oov, src_mask,
-                                                             src_bow_norm, query_emb=query_embeds,
+                                                             src_bow_norm,
                                                              ref_input=ref_input,
                                                              begin_iterate_train_ntm=begin_iterate_train_ntm,
                                                              graph=graph)

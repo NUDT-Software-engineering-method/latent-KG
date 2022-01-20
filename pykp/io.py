@@ -35,7 +35,6 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         if use_multidoc_graph:
             keys += ['ref_docs']
             keys += ['graph']
-            keys += ['query_embedding']
             if use_multidoc_copy:
                 keys += ['ref_oov']
         filtered_examples = []
@@ -143,8 +142,6 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         src_bow = [b['src_bow'] for b in batches]
         # ref docs
         if self.use_multidoc_graph:
-            # query_embeddings = [b['query_embedding'] for b in batches]
-            # query_embeddings = torch.Tensor(query_embeddings)
             ref_docs = [b['ref_docs'] for b in batches]
             if self.use_multidoc_copy:
                 assert batches[0]['ref_oov'] is not None, "set use_multidoc_copy in preprocess!"
@@ -160,7 +157,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
                 #  covert size to [batch, max_len1, max_len2]
                 ref_oovs = pad(ref_oovs, ref_doc_lens)
         else:
-            ref_docs, ref_oovs, graph, ref_lens, ref_doc_lens, query_embeddings = None, None, None, None, None, None
+            ref_docs, ref_oovs, graph, ref_lens, ref_doc_lens = None, None, None, None, None
 
         # sort all the sequences in the order of source lengths, to meet the requirement of pack_padded_sequence
         # seq_pairs = sorted(zip(src, trg, trg_oov, src_oov, oov_lists, src_bow), key=lambda p: len(p[0]), reverse=True)
@@ -173,9 +170,8 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         trg_oov, _, _ = self._pad(trg_oov)
         src_oov, _, _ = self._pad(src_oov)
         src_bow = self._pad_bow(src_bow)
-        query_embeddings = None
         return src, src_lens, src_mask, trg, trg_lens, trg_mask, src_oov, trg_oov, oov_lists, src_bow, \
-               ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_embeddings
+               ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph
 
     def _pad2d(self, input_list):
         """
@@ -259,8 +255,6 @@ class KeyphraseDataset(torch.utils.data.Dataset):
         original_indices = list(range(batch_size))
         # get ref oovs
         if self.use_multidoc_graph:
-            # query_embeddings = [b['query_embedding'] for b in batches]
-            # query_embeddings = torch.Tensor(query_embeddings)
             ref_docs = [b['ref_docs'] for b in batches]
             if self.use_multidoc_copy:
                 assert batches[0]['ref_oov'] is not None, "set use_multidoc_copy in preprocess!"
@@ -276,7 +270,7 @@ class KeyphraseDataset(torch.utils.data.Dataset):
                 #  covert size to [batch, max_len1, max_len2]
                 ref_oovs = pad(ref_oovs, ref_doc_lens)
         else:
-            ref_docs, ref_oovs, graph, ref_lens, ref_doc_lens, query_embeddings = None, None, None, None, None, None
+            ref_docs, ref_oovs, graph, ref_lens, ref_doc_lens = None, None, None, None, None
 
         # sort all the sequences in the order of source lengths, to meet the requirement of pack_padded_sequence
         # if self.load_train:
@@ -298,9 +292,8 @@ class KeyphraseDataset(torch.utils.data.Dataset):
             trg_lens, trg_mask = None, None
 
         src_bow = self._pad_bow(src_bow)
-        query_embeddings = None
         return src, src_lens, src_mask, src_oov, oov_lists, src_str, trg_str, trg, trg_oov, trg_lens, trg_mask, original_indices, src_bow, \
-               ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph, query_embeddings
+               ref_docs, ref_lens, ref_doc_lens, ref_oovs, graph
 
 
 def build_dataset(src_trgs_pairs, word2idx, bow_dictionary, opt, mode='one2one', include_original=True, is_train=True, tfidf_model=None):
@@ -318,13 +311,16 @@ def build_dataset(src_trgs_pairs, word2idx, bow_dictionary, opt, mode='one2one',
             examples = processes.starmap(_build_one_example, zip(src_trgs_pairs))
     # retriever is not None ,dense_retrieve is true
     else:
-        ref_docs_tokenized, graph_utils, query_embedding = opt.retriever.batch_maybe_retrieving_building_graph(
+        ref_docs_tokenized, graph_utils = opt.retriever.batch_maybe_retrieving_building_graph(
             [' '.join(pair[0]) for pair in src_trgs_pairs], word2idx,
             vocab_size=opt.vocab_size, is_train=is_train)
         if graph_utils is None:
             graph_utils = [None] * len(src_trgs_pairs)
-        examples = [_build_one_example(i, j, k, q) for i, j, k, q in zip(src_trgs_pairs, ref_docs_tokenized, graph_utils, query_embedding)]
-
+        print("example is starting!")
+        examples = [_build_one_example(i, j, k) for i, j, k in zip(src_trgs_pairs, ref_docs_tokenized, graph_utils)]
+        # with Pool(opt.num_workers) as processes:
+        #     examples = processes.starmap(_build_one_example, zip(src_trgs_pairs, ref_docs_tokenized, graph_utils))
+        print("example is finished!")
     if mode == 'one2one':
         return_examples = []
         for exps in examples:
@@ -336,7 +332,7 @@ def build_dataset(src_trgs_pairs, word2idx, bow_dictionary, opt, mode='one2one',
     return return_examples
 
 
-def build_one_example(src_tgt_pair, ref_docs_tokenized=None, graph_utils=None, query_embedding=None, opt=None, mode='one2one',
+def build_one_example(src_tgt_pair, ref_docs_tokenized=None, graph_utils=None, opt=None, mode='one2one',
                       include_original=False, is_train=True, word2idx=None, bow_dictionary=None, tf_idf_model=None):
     assert word2idx is not None, "word2idx should not be None"
     assert bow_dictionary is not None, "bow_dictionary should not be None"
@@ -377,7 +373,6 @@ def build_one_example(src_tgt_pair, ref_docs_tokenized=None, graph_utils=None, q
                 example['graph'] = graph_utils
             if opt.use_multidoc_copy:
                 # the doc represation using pretrained model
-                example['query_embedding'] = query_embedding
                 example['ref_oov'] = ref_oov
         if include_original:
             example['src_str'] = source

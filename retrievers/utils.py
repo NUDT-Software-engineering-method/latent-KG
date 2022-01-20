@@ -7,7 +7,14 @@ import pykp.io as io
 def read_tokenized_src_file(src_file, max_src_len=None):
     references = []
     filtered_cnt = 0
+    empty_line = 0
     for src_line in open(src_file, 'r'):
+        if len(src_line.strip()) == 0:
+            empty_line += 1
+            if empty_line < 600:
+                continue
+            else:
+                break
         src_word_list = src_line.strip().split(' ')
         if max_src_len is not None:
             src_word_list = src_word_list[:max_src_len]
@@ -19,16 +26,22 @@ def read_tokenized_src_file(src_file, max_src_len=None):
     return references
 
 
-def read_src_and_trg_files(src_file, trg_file, use_doc=True, use_kp=True):
+def read_src_and_trg_files(src_file, trg_file, use_doc=True, use_kp=True, max_src_len=None):
     references_with_trg = []
     filtered_cnt = 0
+    empty_line = 0
     for line_idx, (src_line, trg_line) in enumerate(zip(open(src_file, 'r'), open(trg_file, 'r'))):
         # process source line
         if len(src_line.strip()) == 0:
-            continue
+            empty_line += 1
+            if empty_line < 600:
+                continue
+            else:
+                break
         src_word_list = src_line.strip().split(" ")
-
-        if len(src_word_list) > 400:
+        if max_src_len is not None:
+            src_word_list = src_word_list[:max_src_len]
+        if len(src_word_list) == 0:
             filtered_cnt += 1
             continue
 

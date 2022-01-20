@@ -41,10 +41,9 @@ class SBERTDocRanker(object):
         # 加载roberta-large-nli-stsb-mean-tokens。中文可以使用paraphrase-multilingual-mpnet-base-v2（好而慢）或者paraphrase-multilingual-MiniLM-L12-v2（快但是差一些）
         # model_name = "allenai-specter"
         model_name = opt.dense_model_name
-        self.model = SentenceTransformer(model_name)
-        # self.model = SentenceTransformer('/home/ubuntu/TAKG/setence_trans_model/sentence_transformers/'+model_name)
+        # self.model = SentenceTransformer('/home/yxb/setence_trans_model/sentence_transformers/' + model_name)
+        self.model = SentenceTransformer('/home/ubuntu/setence_trans_model/sentence_transformers/'+model_name)
         embed_cache_path = opt.data_dir + '/embeddings-{}.pkl'.format(model_name.replace('/', '_'))
-        # embed_cache_path = 'data/kp20k_sorted50/Full50_Dense_RefKP_RefDoc_RefGraph_CopyRef/kp20k-embeddings-{}.pkl'.format(model_name.replace('/', '_'))
         self.index, self.tfidf_vectorizer = self.build_index(embed_cache_path)
 
     def build_index(self, embed_cache_path):
@@ -53,7 +52,7 @@ class SBERTDocRanker(object):
         # Number of clusters used for faiss. Select a value 4*sqrt(N) to 16*sqrt(N)
         # - https://github.com/facebookresearch/faiss/wiki/Guidelines-to-choose-an-index
         # n_clusters = 5600  # N=500000
-        n_clusters = 2000  # N=50000
+        n_clusters = 500  # N=50000
         # n_clusters = 20  # N=50000
 
         # We use Inner Product (dot-product) as Index. We will normalize our vectors
@@ -75,7 +74,7 @@ class SBERTDocRanker(object):
             else:
                 ref_doc_path = self.opt.test_src
             ref_docs = read_tokenized_src_file(ref_doc_path, self.opt.max_src_len)
-            corpus_embeddings = self.model.encode(ref_docs, show_progress_bar=True, convert_to_numpy=True)
+            corpus_embeddings = self.model.encode(ref_docs, show_progress_bar=True, convert_to_numpy=True, batch_size=128)
 
             # Create the FAITS index
             print("Start creating FAISS index")
@@ -114,7 +113,7 @@ class SBERTDocRanker(object):
         return index, tfidf_vectorizer
 
     def batch_closest_docs(self, queries, k=1):
-        query_embedding = self.model.encode(queries, show_progress_bar=True, convert_to_numpy=True)
+        query_embedding = self.model.encode(queries, show_progress_bar=True, convert_to_numpy=True, batch_size=128)
 
         # FAISS works with inner product (dot product). When we normalize vectors to unit length,
         # inner product is equal to cosine similarity
@@ -126,7 +125,7 @@ class SBERTDocRanker(object):
         # normalize score to integer between [0, 9]
         distances = np.round(distances * 9)
         distances[distances < 0] = 0
-        return corpus_ids, distances, query_embedding.tolist()
+        return corpus_ids, distances
 
     def batch_words_tfidf(self, queries, k=3, word2idx=None):
         batch_tfidf = self.tfidf_vectorizer.transform(queries)

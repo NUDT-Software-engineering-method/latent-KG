@@ -2,9 +2,11 @@
 home_dir="/home/ubuntu/TAKG"
 export PYTHONPATH=${home_dir}:${PYTHONPATH}
 
-dataset="StackExchange"
+dataset="Twitter"
 pred_path=(
-pred/predict__SE_s150_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.topic_attn_in.ntm_warm_up_20.copy.use_refs.seed10.emb150.vs50000.dec300.20220107-222841__e24.val_loss=2.181.model-1h-30m/test_ret_support.txt
+pred/test/Full_Dense_RefKP_RefDoc_RefGraph_CopyRef_rnn_One2one_Copy_RefGraph_CopyRef_Seed10_Dropout0.1_LR0.002_BS128_Embed100_NEnc1_NDec1_Dim300/Twitter/predictions.txt
+pred/test/Full_Dense_RefKP_RefDoc_RefGraph_CopyRef_rnn_One2one_Copy_RefGraph_CopyRef_Seed100_Dropout0.1_LR0.002_BS128_Embed100_NEnc1_NDec1_Dim300/Twitter/predictions.txt
+pred/test/Full_Dense_RefKP_RefDoc_RefGraph_CopyRef_rnn_One2one_Copy_RefGraph_CopyRef_Seed5643_Dropout0.1_LR0.002_BS128_Embed100_NEnc1_NDec1_Dim300/Twitter/predictions.txt
 )
 
 for model in ${pred_path[*]}

@@ -26,19 +26,22 @@ def read_src_trg_files(opt, tag="train"):
 
     tokenized_src = []
     tokenized_trg = []
-
+    empty_line = 0
     for src_line, trg_line in zip(open(src_file, 'r'), open(trg_file, 'r')):
+        if len(src_line.strip()) == 0:
+            empty_line += 1
+            if empty_line < 600:
+                continue
+            else:
+                break
         # process src and trg line
         src_word_list = src_line.strip().split(' ')
         trg_list = trg_line.strip().split(';')  # a list of target sequences
         trg_word_list = [trg.strip().split(' ') for trg in trg_list]
-
         # Truncate the sequence if it is too long
         src_word_list = src_word_list[:opt.max_src_len]
         if tag != "test":
             trg_word_list = [trg_list[:opt.max_trg_len] for trg_list in trg_word_list]
-        if len(src_word_list) == 0:
-            continue
         # Append the lines to the data
         tokenized_src.append(src_word_list)
         tokenized_trg.append(trg_word_list)
@@ -136,6 +139,12 @@ def make_bow_dictionary(tokenized_src_trg_pairs, data_dir, bow_vocab):
         stopwords1 = read_stopwords("stopwords/stopwords.en.txt")
         stopwords2 = read_stopwords("stopwords/stopwords.SE.txt")
         final_stopwords = set(STOPWORDS).union(stopwords1).union(stopwords2)
+    elif 'kp20k' in data_dir:
+        STOPWORDS = gensim.parsing.preprocessing.STOPWORDS
+        stopwords1 = read_stopwords("stopwords/stopwords.en.txt")
+        stopwords2 = read_stopwords("stopwords/stopwords.SE.txt")
+        stopwords3 = read_stopwords("stopwords/stopwords.twitter.txt")
+        final_stopwords = set(STOPWORDS).union(stopwords1).union(stopwords2).union(stopwords3)
 
     bow_dictionary.filter_tokens(list(map(bow_dictionary.token2id.get, final_stopwords)))
 
@@ -237,6 +246,7 @@ if __name__ == "__main__":
     opt.n_ref_docs = 5
     if 'Weibo' in opt.data_dir:
         opt.dense_model_name = 'paraphrase-multilingual-mpnet-base-v2'
+
     if 'Twitter' in opt.data_dir:
         opt.vocab_size = 30000
 
@@ -244,6 +254,13 @@ if __name__ == "__main__":
         opt.max_src_len = 150
         opt.n_ref_docs = 3
         opt.n_topic_words = 10
+
+    elif 'kp20k' in opt.data_dir:
+        opt.max_src_len = 400
+        opt.n_ref_docs = 3
+        opt.n_topic_words = 20
+        opt.bow_vocab = 10000
+        opt.vocab_size = 50000
 
     data_fn = opt.data_dir.rstrip('/').split('/')[-1] + '_s{}_t{}'.format(opt.max_src_len, opt.max_trg_len)
 

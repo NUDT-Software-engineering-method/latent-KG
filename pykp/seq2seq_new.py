@@ -52,8 +52,7 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         self.tanh = nn.Tanh()
 
     def forward(self, src, src_lens, trg=None, src_oov=None, max_num_oov=None, src_mask=None, src_bow=None,
-                query_emb=None, ref_input=None,
-                begin_iterate_train_ntm=False, num_trgs=None, graph=None):
+                ref_input=None, begin_iterate_train_ntm=False, num_trgs=None, graph=None):
         """
         :param src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
         :param src_lens: a list containing the length of src sequences for each batch, with len=batch, with oov words replaced by unk idx
@@ -90,11 +89,8 @@ class TopicSeq2SeqModel(Seq2SeqModel):
         assert memory_bank.size() == torch.Size([batch_size, max_src_len, self.num_directions * self.encoder_size])
         assert encoder_final_state.size() == torch.Size([batch_size, self.num_directions * self.encoder_size])
 
-        # 判断是否为使用预训练的向量作为主题模型的输入
-        if query_emb is None:
-            topic_context = encoder_final_state
-        else:
-            topic_context = query_emb
+        topic_context = encoder_final_state
+
         # Topic Model forward
 
         topic_represent, topic_represent_g, recon_x, posterior_mean, posterior_log_variance = self.topic_model(
