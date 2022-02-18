@@ -43,11 +43,12 @@ class SBERTDocRanker(object):
         model_name = opt.dense_model_name
         # self.model = SentenceTransformer('/home/yxb/setence_trans_model/sentence_transformers/' + model_name)
         self.model = SentenceTransformer('/home/ubuntu/setence_trans_model/sentence_transformers/'+model_name)
+        # self.model = SentenceTransformer(model_name)
         embed_cache_path = opt.data_dir + '/embeddings-{}.pkl'.format(model_name.replace('/', '_'))
         self.index, self.tfidf_vectorizer = self.build_index(embed_cache_path)
 
     def build_index(self, embed_cache_path):
-        embedding_size = 768  # Size of embeddings
+        embedding_size = 1024  # Size of embeddings
         # Defining our FAISS index
         # Number of clusters used for faiss. Select a value 4*sqrt(N) to 16*sqrt(N)
         # - https://github.com/facebookresearch/faiss/wiki/Guidelines-to-choose-an-index
@@ -75,7 +76,7 @@ class SBERTDocRanker(object):
                 ref_doc_path = self.opt.test_src
             ref_docs = read_tokenized_src_file(ref_doc_path, self.opt.max_src_len)
             corpus_embeddings = self.model.encode(ref_docs, show_progress_bar=True, convert_to_numpy=True, batch_size=128)
-
+            print(corpus_embeddings.shape)
             # Create the FAITS index
             print("Start creating FAISS index")
             # First, we need to normalize vectors to unit length

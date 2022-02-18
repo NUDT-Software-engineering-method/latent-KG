@@ -203,7 +203,7 @@ def main(opt):
     valid_one2one = pykp.io.build_dataset(
         tokenized_valid_pairs, word2idx, bow_dictionary, opt, mode='one2one', tfidf_model=tf_idf_model)
 
-    print("Dumping valid to disk: %s\n" % (opt.res_data_dir + '/valid.ne2one.pt'))
+    print("Dumping valid to disk: %s\n" % (opt.res_data_dir + '/valid.one2one.pt'))
     torch.save(valid_one2one, open(opt.res_data_dir + '/valid.one2one.pt', 'wb'))
 
     # Processing test dataset
@@ -247,7 +247,7 @@ if __name__ == "__main__":
     if 'Weibo' in opt.data_dir:
         opt.dense_model_name = 'paraphrase-multilingual-mpnet-base-v2'
 
-    if 'Twitter' in opt.data_dir:
+    elif 'Twitter' in opt.data_dir:
         opt.vocab_size = 30000
 
     elif 'StackExchange' in opt.data_dir:

@@ -1,7 +1,7 @@
 #!/bin/bash
 home_dir="/home/ubuntu/TAKG"
 export PYTHONPATH=${home_dir}:${PYTHONPATH}
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 
 seeds=(
