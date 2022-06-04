@@ -1,9 +1,10 @@
-# TAKG
-The official implementation of ACL 2019 paper "[**T**opic-**A**ware Neural **K**eyphrase **G**eneration for Social Media Language](https://www.aclweb.org/anthology/P19-1240)" (**TAKG**).
-This is a joint work with [NLP Center at Tencent AI Lab](https://ai.tencent.com/ailab/nlp/). Some scripts for drawing figures in the paper can be found [here](https://github.com/yuewang-cuhk/DrawFigureForPaper).
+# TRGKG
+
+The official implementation of KSEM 2022 paper "**Topic and Reference Guided Keyphrase Generation from Social Media" (** TRGKG).
 
 
 ## Dataset
+
 Due to the copyright issue of TREC 2011 Twitter dataset, we only release the Weibo dataset (in `data/Weibo`) and StackExchange dataset (in `data/StackExchange`). For more details about the Twitter dataset, please contact [Yue Wang](https://yuewang-cuhk.github.io/) or [Jing Li](https://girlgunner.github.io/jingli/).
 
 ### Data format
@@ -32,11 +33,10 @@ StackExchange | 12,114 | 1.41 | 54.32 | 10,852
 ## Model
 Our model allows joint modeling of latent topics and keyphrase generation. It consists of a neural topic model to induce the latent topics and a neural seq2seq-based generation model to produce keyphrases. The overall architecture is depicted below:
 
-<p align="center">
-  <img src="https://github.com/yuewang-cuhk/TAKG/blob/master/model.PNG" alt="The overall architecture" width="600"/>
-</p>
+![image-20220604205303048](https://gitee.com/yxbLovewy/my-pictures/raw/master/image-20220604205303048.png)
 
 ## Code
+
 Here we give some representative commands illustrating how to preprocess data, train, test, and evaluate our model. For more detailed configurations, please refer to `config.py`. In `train.py` and `predict.py`, I hard code some default arguments in the function `process_opt(opt)` to simplify each running command. We also provide our model's sample predictions for the three datasets in `my_sample_prediction`.
 
 This code is mainly adapted from [KenChan's keyphrase generation code](https://github.com/kenchan0226/keyphrase-generation-rl) and [Zengjichuan's TMN](https://github.com/zengjichuan/TMN). Thank my colleagues (Ken and Zeng) very much for their support.
