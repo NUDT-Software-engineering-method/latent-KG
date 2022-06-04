@@ -12,7 +12,7 @@ class Attention(nn.Module):
     def __init__(self, decoder_size, memory_bank_size, topic_num):
         """Bahdanau style attention"""
         super(Attention, self).__init__()
-        self.v = nn.Linear(decoder_size, 1, bias=False)
+        self. v = nn.Linear(decoder_size, 1, bias=False)
         self.decode_project = nn.Linear(decoder_size, decoder_size, bias=False)
         self.memory_project = nn.Linear(memory_bank_size, decoder_size, bias=False)
         self.topic_project = nn.Linear(topic_num, decoder_size, bias=False)
@@ -30,6 +30,8 @@ class Attention(nn.Module):
                                                                    decoder_size).contiguous()
 
         att_features = encoder_feature + dec_feature_expanded + topic_feature_expanded  # [batch_size, max_input_seq_len, decoder_size]
+        # TODO: need to use topic features
+        # att_features = encoder_feature + dec_feature_expanded
         e = att_features.tanh()  # [batch_size, max_input_seq_len, decoder_size]
         scores = self.v(e).squeeze(-1)  # [batch_size, max_input_seq_len]
         return scores
@@ -92,6 +94,8 @@ class HierAttention(nn.Module):
             expand(batch_size, max_input_seq_len1, max_input_seq_len2, decoder_size).contiguous()
 
         att_features = encoder_feature + dec_feature_expanded + topic_features_expanded
+        # TODO: need to use topic features
+        # att_features = encoder_feature + dec_feature_expanded
         e = att_features.tanh()  # [batch_size,max_input_seq_len1, max_input_seq_len2,decoder_size]
         scores = self.v(e).squeeze(-1)  # [batch_size,max_input_seq_len1, max_input_seq_len2]
         return scores

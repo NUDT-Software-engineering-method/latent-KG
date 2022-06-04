@@ -546,5 +546,5 @@ def retriever_opts(parser):
     parser.add_argument('--dense_retrieve', '-dense_retrieve', action="store_true",
                         help='use dense_retrieve')
     #
-    parser.add_argument('--dense_model_name', '-dense_model_name', default="roberta-large-nli-stsb-mean-tokens",
+    parser.add_argument('--dense_model_name', '-dense_model_name', default="all-mpnet-base-v2",
                         choices=['all-mpnet-base-v2', 'allenai-specter', 'paraphrase-multilingual-mpnet-base-v2', "roberta-large-nli-stsb-mean-tokens"])

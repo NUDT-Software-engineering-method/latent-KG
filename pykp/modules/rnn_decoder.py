@@ -17,10 +17,10 @@ class RNNDecoder(nn.Module):
                  encoder_attention=False):
         super(RNNDecoder, self).__init__()
         self.use_topic_represent = use_topic_represent
-        self.topic_attn = topic_attn
+        self.topic_attn = topic_attn    # topic加入最后的decoder输出概率
         self.topic_attn_in = topic_attn_in
         self.topic_copy = topic_copy
-        self.topic_dec = topic_dec
+        self.topic_dec = topic_dec  # 在embedding那里加入topic
         self.topic_num = topic_num
 
         self.embed_size = embed_size
@@ -406,8 +406,11 @@ class RefRNNDecoder(RNNDecoder):
             gate = self.fusion_layer(torch.cat([context_cur, context_ref], -1))
             context = gate * context_cur + (1 - gate) * context_ref
         else:
-            context, attn_dist_cur, coverage = self.attention_layer(last_layer_h_next, memory_bank, src_mask, coverage)
-            attn_dist_ref = None
+            context_cur, attn_dist_cur, coverage = self.attention_layer(last_layer_h_next, memory_bank, src_mask, coverage)
+            context_ref, attn_dist_ref = self.ref_attention_layer(last_layer_h_next, ref_doc_reps, ref_word_reps,
+                                                                  topic_represent, ref_doc_mask, ref_word_mask)
+            gate = self.fusion_layer(torch.cat([context_cur, context_ref], -1))
+            context = gate * context_cur + (1 - gate) * context_ref
         # context: [batch_size, memory_bank_size]
         # attn_dist_cur: [batch_size, max_input_seq_len]
         # coverage: [batch_size, max_input_seq_len]

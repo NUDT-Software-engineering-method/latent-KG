@@ -48,7 +48,7 @@ class SBERTDocRanker(object):
         self.index, self.tfidf_vectorizer = self.build_index(embed_cache_path)
 
     def build_index(self, embed_cache_path):
-        embedding_size = 1024  # Size of embeddings
+        embedding_size = 768  # Size of embeddings
         # Defining our FAISS index
         # Number of clusters used for faiss. Select a value 4*sqrt(N) to 16*sqrt(N)
         # - https://github.com/facebookresearch/faiss/wiki/Guidelines-to-choose-an-index

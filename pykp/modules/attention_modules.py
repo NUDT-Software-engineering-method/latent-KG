@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pykp.masked_softmax import MaskedSoftmax
-
+from torch.nn import TransformerEncoder
 
 class Attention(nn.Module):
     def __init__(self, decoder_size, memory_bank_size, coverage_attn, attn_mode):

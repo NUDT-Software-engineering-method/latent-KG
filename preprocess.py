@@ -242,7 +242,7 @@ if __name__ == "__main__":
     opt.ref_kp_path = opt.train_trg
     opt.use_multidoc_graph = True
     opt.use_multidoc_copy = True
-    opt.dense_retrieve = True
+    # opt.dense_retrieve = False
     opt.n_ref_docs = 5
     if 'Weibo' in opt.data_dir:
         opt.dense_model_name = 'paraphrase-multilingual-mpnet-base-v2'

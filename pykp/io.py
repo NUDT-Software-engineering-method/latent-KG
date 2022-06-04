@@ -343,7 +343,7 @@ def build_one_example(src_tgt_pair, ref_docs_tokenized=None, graph_utils=None, o
     # preprocess ref posts
     if opt.retriever is not None:
         if ref_docs_tokenized is None:
-            ref_docs_tokenized, graph_utils = opt.retriever.maybe_retrieving_building_graph(source, word2idx,
+            ref_docs_tokenized, graph_utils = opt.retriever.maybe_retrieving_building_graph(" ".join(source), word2idx,
                                                                                             vocab_size=len(
                                                                                                 word2idx),
                                                                                             is_train=is_train)

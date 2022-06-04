@@ -338,6 +338,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 if last_train_ntm_epoch > opt.ntm_warm_up_epochs:
                     begin_iterate_train_ntm = False
                     # 仅使用生成的Loss更新WW
+                    # TODO:最好效果是False
                     opt.add_two_loss = False
                     last_train_ntm_epoch = 0
             else:
@@ -345,7 +346,7 @@ def train_model(topicSeq2Seq_model, optimizer_ml, optimizer_ntm, optimizer_whole
                 optimizer = optimizer_whole
                 unfix_model_seq2seq_decoder(topicSeq2Seq_model)
                 topicSeq2Seq_model.train()
-                # topicSeq2Seq_model.topic_model.train()
+                # topicSeq2Seq_model.topic_model.eval()
                 logging.info("\nTraining seq2seq+ntm epoch: {}/{}".format(epoch, opt.epochs))
                 if opt.iterate_train_ntm and last_train_joint_epoch > 50:
                     begin_iterate_train_ntm = True
