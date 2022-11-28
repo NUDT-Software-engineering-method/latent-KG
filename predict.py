@@ -104,7 +104,7 @@ def process_opt(opt):
     if '.fusion_emb' in opt.model:
         opt.use_fusion_embed = True
 
-    opt.use_topic_represent = True
+    opt.use_topic_represent = False
     if opt.n_best < 0:
         opt.n_best = opt.beam_size
 

@@ -2,12 +2,7 @@ home_dir="/home/ubuntu/TAKG"
 export PYTHONPATH=${home_dir}:${PYTHONPATH}
 export CUDA_VISIBLE_DEVICES=0
 model_path=(
-model/StackExchange_s150_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.ntm_warm_up_20.copy.use_refs.seed10.emb150.vs50000.dec300.20220321-071147/e24.val_loss=2.104.model-1h-24m
-model/StackExchange_s150_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.ntm_warm_up_20.copy.use_refs.seed100.emb150.vs50000.dec300.20220321-092804/e24.val_loss=2.125.model-1h-24m
-model/StackExchange_s150_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.ntm_warm_up_20.copy.use_refs.seed5000.emb150.vs50000.dec300.20220321-114407/e24.val_loss=2.124.model-1h-24m
-model/StackExchange_s150_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.ntm_warm_up_20.copy.use_refs.seed5643.emb150.vs50000.dec300.20220321-135914/e24.val_loss=2.126.model-1h-24m
-model/StackExchange_s150_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.ntm_warm_up_20.copy.use_refs.seed8000.emb150.vs50000.dec300.20220321-161418/e24.val_loss=2.109.model-1h-23m
-model/StackExchange_s150_t10.joint_train.add_two_loss.p_1_iterate.use_topic.topic_num50.topic_attn.topic_copy.ntm_warm_up_20.copy.use_refs.seed9572.emb150.vs50000.dec300.20220321-182818/e24.val_loss=2.119.model-1h-24m
+model/Twitter_s100_t10.copy.seed10.emb150.vs30000.dec300.20221128-165134/e3.val_loss=1.555.model-0h-02m
 )
 for model in ${model_path[*]}
 do
