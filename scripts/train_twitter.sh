@@ -16,7 +16,7 @@ seeds=(
 for seed in ${seeds[*]}
 do
     # -topic_attn_in
-    python train_mySeq2Seq.py -data_tag Twitter_s100_t10 -copy_attention -epochs 110 -early_stop_tolerance 3 -joint_train_strategy p_1_iterate -learning_rate_decay 0.9 -batch_size 128 -learning_rate 0.002 -ntm_warm_up_epochs 50 -batch_workers 0 -seed $seed
+    python train_latent_seq2seq.py -data_tag Twitter_s100_t10 -copy_attention -epochs 110 -early_stop_tolerance 3 -learning_rate_decay 0.9 -batch_size 128 -learning_rate 0.002 -batch_workers 0 -seed $seed
 done
 
 #topic_nums=(
