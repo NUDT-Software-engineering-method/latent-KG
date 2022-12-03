@@ -398,6 +398,146 @@ class SequenceGenerator(object):
         result_dict['batch_size'] = batch_size
         return result_dict
 
+    def beam_search_vq(self, src, src_lens, src_oov, src_mask, src_bow, oov_lists, word2idx, max_eos_per_output_seq=1):
+        """
+        :param src: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], with oov words replaced by unk idx
+        :param src_lens: a list containing the length of src sequences for each batch, with len=batch
+        :param src_oov: a LongTensor containing the word indices of source sentences, [batch, src_seq_len], contains the index of oov words (used by copy)
+        :param src_mask: a FloatTensor, [batch, src_seq_len]
+        :param oov_lists: list of oov words (idx2word) for each batch, len=batch
+        :param word2idx: a dictionary
+        """
+        self.model.eval()
+        batch_size = src.size(0)
+        beam_size = self.beam_size
+        max_src_len = src.size(1)
+
+        # Encoding
+        if self.encoder_attention:
+            memory_bank, encoder_final_state, hidden_topic_state_memory = self.model.encoder(src, src_lens,
+                                                                                             self.ntm_model.get_topic_embedding())
+        else:
+            memory_bank, encoder_final_state = self.model.encoder(src, src_lens)
+            hidden_topic_state_memory = None
+        # [batch_size, max_src_len, memory_bank_size], [batch_size, memory_bank_size]
+
+        # Generate topic representation
+        if self.use_topic_represent:
+            src_bow_norm = F.normalize(src_bow)
+            self.ntm_model.eval()
+            if self.topic_type == 'z':
+                # TODO: 自己的模型需要修改
+                topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                # topic_represent, _, _, _, _ = self.ntm_model(src_bow_norm)
+            else:
+                _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm, encoder_final_state)
+                # _, topic_represent, _, _, _ = self.ntm_model(src_bow_norm)
+
+            topic_represent = topic_represent.repeat(self.beam_size, 1)  # [batch * beam_size, topic_num]
+        else:
+            topic_represent = None
+
+        max_num_oov = max([len(oov) for oov in oov_lists])  # max number of oov for each batch
+        # Init decoder state
+        decoder_init_state = self.model.init_decoder_state(
+            encoder_final_state)  # [dec_layers, batch_size, decoder_size]
+
+        # init initial_input to be BOS token
+        # decoder_init_input = src.new_ones((batch_size * beam_size, 1)) * self.bos_idx  # [batch_size*beam_size, 1]
+
+        if self.coverage_attn:  # init coverage
+            # coverage = torch.zeros_like(src, dtype=torch.float)  # [batch, src_len]
+            coverage = src.new_zeros((batch_size * beam_size, max_src_len),
+                                     dtype=torch.float)  # [batch_size * beam_size, max_src_len]
+        else:
+            coverage = None
+
+        if self.review_attn:
+            decoder_memory_bank = decoder_init_state[-1, :, :].unsqueeze(1)  # [batch, 1, decoder_size]
+            decoder_memory_bank = decoder_memory_bank.repeat(beam_size, 1, 1)
+            assert decoder_memory_bank.size() == torch.Size([batch_size * beam_size, 1, self.model.decoder_size])
+        else:
+            decoder_memory_bank = None
+
+        # expand memory_bank, src_mask
+        memory_bank = memory_bank.repeat(beam_size, 1, 1)  # [batch * beam_size, max_src_len, memory_bank_size]
+        if hidden_topic_state_memory is not None:
+            hidden_topic_state_memory = hidden_topic_state_memory.repeat(beam_size, 1, 1)
+        src_mask = src_mask.repeat(beam_size, 1)  # [batch * beam_size, src_seq_len]
+        src_oov = src_oov.repeat(self.beam_size, 1)  # [batch * beam_size, src_seq_len]
+        decoder_state = decoder_init_state.repeat(1, self.beam_size,
+                                                  1)  # [dec_layers, batch_size * beam_size, decoder_size]
+
+        # exclusion_list = ["<t>", "</t>", "."]
+        exclusion_tokens = set([word2idx[t]
+                                for t in self.ignore_when_blocking])
+
+        beam_list = [
+            Beam(beam_size, n_best=self.n_best, cuda=self.cuda, global_scorer=self.global_scorer, pad=self.pad_idx,
+                 eos=self.eos_idx, bos=self.bos_idx, max_eos_per_output_seq=max_eos_per_output_seq,
+                 block_ngram_repeat=self.block_ngram_repeat, exclusion_tokens=exclusion_tokens) for _ in
+            range(batch_size)]
+
+        # Help functions for working with beams and batches
+        def var(a):
+            return a.clone().detach()
+            # return torch.tensor(a, requires_grad=False)
+
+        '''
+        Run beam search.
+        '''
+        for t in range(1, self.max_sequence_length + 1):
+            if all((b.done() for b in beam_list)):
+                break
+
+            # Construct batch x beam_size nxt words.
+            # Get all the pending current beam words and arrange for forward.
+            # b.get_current_tokens(): [beam_size]
+            # torch.stack([ [beam of batch 1], [beam of batch 2], ... ]) -> [batch, beam]
+            # after transpose -> [beam, batch]
+            # After flatten, it becomes
+            # [batch_1_beam_1, batch_2_beam_1,..., batch_N_beam_1, batch_1_beam_2, ..., batch_N_beam_2, ...]
+            # this match the dimension of hidden state
+            decoder_input = var(torch.stack([b.get_current_tokens() for b in beam_list])
+                                .t().contiguous().view(-1))
+            # decoder_input: [batch_size * beam_size]
+
+            # Turn any copied words to UNKS
+            if self.copy_attn:
+                decoder_input = decoder_input.masked_fill(
+                    decoder_input.gt(self.model.vocab_size - 1), self.model.unk_idx)
+
+            # Convert the generated eos token to bos token, only useful in one2many_mode=2 or one2many_mode=3
+            decoder_input = decoder_input.masked_fill(decoder_input == self.eos_idx, self.bos_idx)
+
+            # run one step of decoding
+            # [flattened_batch, vocab_size], [dec_layers, flattened_batch, decoder_size], [flattened_batch, memory_bank_size], [flattened_batch, src_len], [flattened_batch, src_len]
+
+            decoder_dist, decoder_state, context, attn_dist, _, coverage = \
+                self.model.decoder(decoder_input, topic_represent, decoder_state, memory_bank, src_mask,
+                                   max_num_oov, src_oov, coverage,
+                                   topic_embedding=self.ntm_model.get_topic_embedding())
+
+            log_decoder_dist = torch.log(decoder_dist + EPS)
+
+            if self.review_attn:
+                decoder_memory_bank = torch.cat([decoder_memory_bank, decoder_state[-1, :, :].unsqueeze(1)],
+                                                dim=1)  # [batch_size * beam_size, t+1, decoder_size]
+
+            # Compute a vector of batch x beam word scores
+            log_decoder_dist = log_decoder_dist.view(beam_size, batch_size, -1)  # [beam_size, batch_size, vocab_size]
+            attn_dist = attn_dist.view(beam_size, batch_size, -1)  # [beam_size, batch_size, src_seq_len]
+
+            # Advance each beam
+            for batch_idx, beam in enumerate(beam_list):
+                beam.advance(log_decoder_dist[:, batch_idx], attn_dist[:, batch_idx, :src_lens[batch_idx]])
+                self.beam_decoder_state_update(batch_idx, beam.get_current_origin(), decoder_state, decoder_memory_bank)
+
+        # Extract sentences from beam.
+        result_dict = self._from_beam(beam_list)
+        result_dict['batch_size'] = batch_size
+        return result_dict
+
     def _from_beam(self, beam_list):
         ret = {"predictions": [], "scores": [], "attention": []}
         for b in beam_list:

@@ -236,9 +236,9 @@ class LatentSeq2SeqModel(Seq2SeqModel):
 
         self.tanh = nn.Tanh()
         # topic model
-        self.cls_to_latent = torch.nn.Linear(self.encoder_dim, self.encoder_dim)
-        self.vq_vae = VectorQuantizer(num_embeddings=self.topic_num, embedding_dim=self.encoder_dim)
-        self.latent_to_bow = torch.nn.Linear(self.encoder_dim, opt.bow_vocab_size)
+        self.cls_to_latent = torch.nn.Linear(self.encoder_dim, self.topic_num)
+        self.vq_vae = VectorQuantizer(num_embeddings=self.topic_num, embedding_dim=self.topic_num)
+        self.latent_to_bow = torch.nn.Linear(self.topic_num, opt.bow_vocab_size)
 
     def topic_encode_decode(self, encoder_state):
         latent = self.cls_to_latent(encoder_state)

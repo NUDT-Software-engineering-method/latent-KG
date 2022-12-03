@@ -1,22 +1,22 @@
 #!/bin/bash
-home_dir="/home/yxb/MyCoding/TAKG_My_New/latent-KG"
+home_dir="/home/ubuntu/latent-KG"
 export PYTHONPATH=${home_dir}:${PYTHONPATH}
 export CUDA_VISIBLE_DEVICES=0
 
 
 seeds=(
 10
-#100
-#5000
-#5643
-#8000
-#9572
+100
+5000
+5643
+8000
+9572
 )
 # no sperate train
 for seed in ${seeds[*]}
 do
     # -topic_attn_in
-    python train_latent_seq2seq.py -data_tag Twitter_s100_t10 -copy_attention -epochs 110 -early_stop_tolerance 3 -learning_rate_decay 0.9 -batch_size 128 -learning_rate 0.002 -batch_workers 0 -seed $seed
+    python train_latent_seq2seq.py -data_tag Twitter_s100_t10 -copy_attention -topic_dec -topic_attn  -topic_copy -epochs 110 -early_stop_tolerance 3 -learning_rate_decay 0.9 -batch_size 128 -learning_rate 0.002 -batch_workers 0 -seed $seed
 done
 
 #topic_nums=(
